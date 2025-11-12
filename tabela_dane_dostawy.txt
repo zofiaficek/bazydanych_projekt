@@ -1,23 +1,23 @@
 CREATE TABLE dane_dostawy (
-    dostawa_id INTEGER NOT NULL,
-    produkt_id INTEGER NOT NULL,
+    id_dostawy INTEGER NOT NULL,
+    id_produktu INTEGER NOT NULL,
     ilosc INTEGER NOT NULL CHECK (ilosc > 0),
     cena_zakupu DECIMAL(10,2) NOT NULL CHECK (cena_zakupu > 0),
     
-    PRIMARY KEY (dostawa_id, produkt_id),
+    PRIMARY KEY (id_dostawy, id_produktu),
 	
     CONSTRAINT fk_dostawy
-        FOREIGN KEY (dostawa_id) 
-        REFERENCES dostawy(dostawa_id) 
+        FOREIGN KEY (id_dostawy) 
+        REFERENCES dostawy(id_dostawy) 
         ON DELETE CASCADE,
 
     CONSTRAINT fk_produkty
-        FOREIGN KEY (produkt_id) 
-        REFERENCES produkty(produkt_id)
+        FOREIGN KEY (id_produktu) 
+        REFERENCES produkty(id_produktu)
         ON DELETE CASCADE
 );
 
-INSERT INTO dane_dostawy (dostawa_id, produkt_id, ilosc, cena_zakupu) VALUES
+INSERT INTO dane_dostawy (id_dostawy, id_produktu, ilosc, cena_zakupu) VALUES
 (1, 1, 50, 1550.00),
 (1, 5, 100, 55.00),
 (1, 10, 150, 45.00),
@@ -82,4 +82,5 @@ INSERT INTO dane_dostawy (dostawa_id, produkt_id, ilosc, cena_zakupu) VALUES
 (29, 103, 30, 820.00),
 (29, 108, 20, 650.00),
 (30, 202, 40, 380.00),
+
 (30, 205, 30, 290.00);
