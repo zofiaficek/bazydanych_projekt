@@ -1,6 +1,6 @@
 CREATE TABLE dostawy (
-	dostawa_id SERIAL PRIMARY KEY,
-	dostawca_id INTEGER NOT NULL,
+	id_dostawy SERIAL PRIMARY KEY,
+	id_dostawy INTEGER NOT NULL,
 	data_dostawy DATE NOT NULL DEFAULT CURRENT_DATE,
     	nr_faktury VARCHAR(50) UNIQUE,
 	
@@ -41,4 +41,5 @@ INSERT INTO dostawy (id_producenta, data_dostawy, nr_faktury) VALUES
 (37, '2024-10-28', 'FV/2024/10/028'),
 (15, '2024-10-30', 'FV/2024/10/029'),
 (36, '2024-11-01', 'FV/2024/11/030')
+
 ;
