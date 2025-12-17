@@ -104,32 +104,19 @@ System samodzielnie pobiera aktualne ceny z katalogu, eliminując błędy ręczn
 Zabezpieczenie przed utratą spójności historycznej dostaw i zamówień.
 *   **`trg_archiwizacja_klienta` oraz `trg_archiwizacja_producenta` (BEFORE DELETE):** Zamiast trwale usuwać kontrahenta (co uszkodziłoby historię faktur), zmieniają jego status na nieaktywny (`czy_aktywny = FALSE`).
 
+### 2. Funkcje
+Funkcje ułatwiające wyciąganie zagregowanych danych finansowych.
+*   **`pobierz_wartosc_zamowienia(id_zamowienia)`:** Zwraca łączną kwotę dla całego zamówienia, sumując wartości wszystkich pozycji towarowych przypisanych do danego dokumentu.
+*   **`pobierz_wartosc_dostawy(id_dostawy)`:** Zwraca łączną kwotę dla całej dostawy, sumując wartości wszystkich pozycji towarowych przypisanych do danego dokumentu.
+*   **`bilans_miesieczny(rok, miesiac)`:** Funkcja finansowa, obliczająca różnicę między łączną wartością sprzedaży (zamówienia od klientów) a kosztami zaopatrzenia (faktury za dostawy) w wybranym miesiącu.
+
+### 3. Procedury
+System wykorzystuje procedury do obsługi złożonych operacji zmian danych, które wymagają zachowania odpowiedniej kolejności działań.
+*   **`anuluj_zamowienie(p_id_zamowienia)`:** Obsługa rezygnacji z zamówienia. Procedura najpierw identyfikuje towary w zamówieniu i zwraca je na stan w tabeli `magazyn`, a następnie trwale usuwa nagłówek zamówienia. Dzięki zastosowaniu kluczy obcych z opcją `CASCADE`, usunięcie zamówienia automatycznie czyści wszystkie powiązane z nim pozycje towarowe (w tabeli `dane_zamowienia`).
+*   **`powtorz_zamowienie(stare_id, nowy_nr_faktury)`:** Szybka obsługa stałych klientów ("To samo co zwykle"). Procedura duplikuje strukturę historycznego zamówienia, tworząc nowy wpis z bieżącą datą. Ściśle współpracuje z triggerami – nie kopiuje starych cen, lecz wymusza na systemie pobranie aktualnych stawek z katalogu oraz ponowną weryfikację dostępności towaru w magazynie.
+  
+
 ## Definicja Uprawnień i Zasad Bezpieczeństwa
-
-
-
-## ⚙️ Kluczowe Funkcjonalności i Logika Biznesowa
-
-### 2. Automatyzacja Magazynu (Triggery)
-
-Rdzeniem logiki biznesowej są triggery (wyzwalacze) odpowiedzialne za automatyczne zarządzanie stanem magazynowym.
-
-1.  **Trigger Zwiększający Stan Magazynu**
-    * **Zdarzenie:** `AFTER INSERT` na tabeli `dane_dostawy`.
-    * **Cel:** Automatycznie dodaje dostarczoną liczbę produktów do tabeli `magazyn` po zarejestrowaniu nowej dostawy.
-
-2.  **Trigger Zmniejszający Stan Magazynu**
-    * **Zdarzenie:** `AFTER INSERT` na tabeli `dane_zamowienia`.
-    * **Cel:** Automatycznie odejmuje zamówioną liczbę produktów ze stanu w tabeli `magazyn` po złożeniu zamówienia.
-
-3.  **Trigger Sprawdzający Dostępność Towaru**
-    * **Zdarzenie:** `BEFORE INSERT` lub `BEFORE UPDATE` na tabeli `dane_zamowienia`.
-    * **Cel:** Blokuje próbę dodania do zamówienia większej liczby produktów, niż jest fizycznie dostępne w magazynie.
-
-4.  **Trigger Korygujący Stan Magazynu**
-    * **Zdarzenie:** `AFTER UPDATE` lub `AFTER DELETE` na tabeli `dane_zamowienia`.
-    * **Cel:** W przypadku anulowania pozycji lub zmniejszenia jej ilości w zamówieniu, trigger automatycznie przywraca odpowiednią liczbę produktów z powrotem do magazynu.
-
 ---
 
 ## 📦 Obiekty Bazy Danych
@@ -141,14 +128,7 @@ Dostęp do danych oraz operacje biznesowe są ułatwione przez dedykowane widoki
 * **`AktualnyStanMagazynu`**: Dynamiczny raport pokazujący aktualną ilość na stanie dla każdego produktu, wraz z jego pełną nazwą, ceną i kategorią.
 * **`BrakujaceProdukty`**: Widok filtrujący produkty, których stan magazynowy jest niski (poniżej 20 sztuk), i łączący je z danymi kontaktowymi dostawcy w celu ułatwienia procesu zamawiania.
 
-### Funkcje (Functions)
 
-* **`CenaZamowienia(zamowienie_id)`**: Oblicza i zwraca całkowitą wartość (sumę) dla konkretnego zamówienia na podstawie pozycji w tabeli `dane_zamowienia` (`ilosc` * `cena_zakupu`).
-
-### Procedury (Procedures)
-
-* **`AnulujZamowinie`**: Procedura biznesowa do usuwania pozycji z `dane_zamowienia`, która automatycznie uruchamia trigger korygujący (nr 3) w celu zwrócenia towaru na stan.
-* **`RejestrujDostawe`**: Procedura biznesowa do dodawania pozycji do `dostawy` i `dane_dostawy`, która automatycznie uruchamia trigger (nr 1) w celu zwiększenia stanu magazynowego.
 
 ---
 
