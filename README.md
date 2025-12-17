@@ -109,36 +109,42 @@ Funkcje ułatwiające wyciąganie zagregowanych danych finansowych.
 *   **`pobierz_wartosc_zamowienia(id_zamowienia)`:** Zwraca łączną kwotę dla całego zamówienia, sumując wartości wszystkich pozycji towarowych przypisanych do danego dokumentu.
 *   **`pobierz_wartosc_dostawy(id_dostawy)`:** Zwraca łączną kwotę dla całej dostawy, sumując wartości wszystkich pozycji towarowych przypisanych do danego dokumentu.
 *   **`bilans_miesieczny(rok, miesiac)`:** Funkcja finansowa, obliczająca różnicę między łączną wartością sprzedaży (zamówienia od klientów) a kosztami zaopatrzenia (faktury za dostawy) w wybranym miesiącu.
+*   **`wskaz_bestseller_kategorii(nazwa_kategorii)`:** Analizuje historyczne dane sprzedażowe dla wybranej grupy asortymentowej i zwraca nazwę produktu, który sprzedał się w największej liczbie sztuk.
 
 ### 3. Procedury
 System wykorzystuje procedury do obsługi złożonych operacji zmian danych, które wymagają zachowania odpowiedniej kolejności działań.
 *   **`anuluj_zamowienie(p_id_zamowienia)`:** Obsługa rezygnacji z zamówienia. Procedura najpierw identyfikuje towary w zamówieniu i zwraca je na stan w tabeli `magazyn`, a następnie trwale usuwa nagłówek zamówienia. Dzięki zastosowaniu kluczy obcych z opcją `CASCADE`, usunięcie zamówienia automatycznie czyści wszystkie powiązane z nim pozycje towarowe (w tabeli `dane_zamowienia`).
 *   **`powtorz_zamowienie(stare_id, nowy_nr_faktury)`:** Szybka obsługa stałych klientów ("To samo co zwykle"). Procedura duplikuje strukturę historycznego zamówienia, tworząc nowy wpis z bieżącą datą. Ściśle współpracuje z triggerami – nie kopiuje starych cen, lecz wymusza na systemie pobranie aktualnych stawek z katalogu oraz ponowną weryfikację dostępności towaru w magazynie.
+
+---
   
 
 ## Definicja Uprawnień i Zasad Bezpieczeństwa
+W projekcie wdrożono model kontroli dostępu oparty na rolach (RBAC – Role-Based Access Control). Zgodnie z zasadą najmniejszych uprawnień (Principle of Least Privilege), użytkownicy systemu otrzymali dostęp wyłącznie do tych struktur danych i funkcji, które są niezbędne do realizacji ich zadań służbowych.
+
+Takie podejście realizuje dwa kluczowe cele:
+*    Separacja odpowiedzialności: Dział handlowy nie może ingerować w dostawy, a magazynierzy nie mają możliwości manipulowania danymi klientów.
+*    Ochrona integralności: Blokada bezpośredniego zapisu w tabelach krytycznych (np. magazyn) wymusza korzystanie z zaimplementowanej logiki biznesowej (triggerów i procedur), co zapobiega powstawaniu błędów.
+
+System definiuje trzy główne role użytkowników:
+
+| Rola | Uprawnienia (Podsumowanie) | Uzasadnienie |
+| :--- | :--- | :--- |
+| **Administrator** | Pełny dostęp (DDL/DML) | Zarządzanie strukturą i pełna kontrola nad bazą danych. |
+| **Sprzedawca** | `SELECT`, `INSERT`, `UPDATE` (Klienci, Zamówienia) <br> `SELECT`, `INSERT`, `DELETE`, `UPDATE` (Dane Zamówienia) | Tworzenie nowych klientów i obsługa pełnego cyklu zamówień. |
+| **Magazynier** | `SELECT`, `INSERT`, `UPDATE` (Dostawy, Dane Dostawy) <br> `SELECT` (Magazyn) | Rejestrowanie nowych dostaw. Odczyt stanu magazynowego (modyfikacja odbywa się tylko przez triggery). |
+| **User** | `SELECT` (Produkty, Kategorie) | Wszystkie role potrzebują dostępu do informacji o produktach i cenach. |
+
 ---
 
-## 📦 Obiekty Bazy Danych
-
-Dostęp do danych oraz operacje biznesowe są ułatwione przez dedykowane widoki, funkcje i procedury.
 
 ### Widoki (Views)
 
-* **`AktualnyStanMagazynu`**: Dynamiczny raport pokazujący aktualną ilość na stanie dla każdego produktu, wraz z jego pełną nazwą, ceną i kategorią.
+* **`Aktualny_Stan_Magazynu`**: Dynamiczny raport pokazujący aktualną ilość na stanie dla każdego produktu, wraz z jego pełną nazwą, ceną i kategorią.
 * **`BrakujaceProdukty`**: Widok filtrujący produkty, których stan magazynowy jest niski (poniżej 20 sztuk), i łączący je z danymi kontaktowymi dostawcy w celu ułatwienia procesu zamawiania.
 
 
 
 ---
 
-## 🔒 Bezpieczeństwo i Role Użytkowników
 
-System definiuje trzy główne role użytkowników, aby zarządzać dostępem do danych.
-
-| Rola | Uprawnienia (Podsumowanie) | Uzasadnienie |
-| :--- | :--- | :--- |
-| **Administrator** | Pełny dostęp (DDL/DML) | Zarządzanie strukturą i pełna kontrola nad bazą danych. |
-| **Sprzedawca** | `SELECT`, `INSERT`, `UPDATE` (Klienci, Zamówienia) <br> `INSERT`, `DELETE`, `UPDATE` (Dane Zamówienia) | Tworzenie nowych klientów i obsługa pełnego cyklu zamówień. |
-| **Magazynier** | `SELECT`, `INSERT`, `UPDATE` (Dostawy, Dane Dostawy) <br> `SELECT` (Magazyn) | Rejestrowanie nowych dostaw. Odczyt stanu magazynowego (modyfikacja odbywa się tylko przez triggery). |
-| **Wszyscy** | `SELECT` (Produkty, Kategorie) | Wszystkie role potrzebują dostępu do informacji o produktach i cenach. |
