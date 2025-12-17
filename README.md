@@ -85,6 +85,24 @@ Zabezpieczenie przed utratą spójności historycznej dostaw i zamówień. Nie m
 
 
 ## Oprogramowanie warstwy dostępu do danych
+### 1. Triggery
+#### Automatyzacja Magazynu
+Mechanizm zapewniający spójność między dokumentami a stanem faktycznym.
+*   **`trg_dodaj_do_magazynu` (AFTER INSERT):** Po zatwierdzeniu nowej dostawy (`dane_dostawy`), system automatycznie zwiększa liczbę sztuk w tabeli `magazyn`.
+*   **`trg_odejmij_z_magazynu` (AFTER INSERT / UPDATE):** Po dodaniu lub edycji pozycji w zamówieniu (dane_zamowienia), system automatycznie koryguje stan magazynowy (odejmuje sprzedany towar lub zwraca różnicę przy korekcie).
+
+#### Walidacja Reguł Biznesowych
+Zabezpieczenie przed sprzedażą towaru, którego fizycznie nie ma.
+*   **`trg_weryfikacja_stanu` (BEFORE INSERT / UPDATE):** Przed zapisaniem pozycji zamówienia funkcja sprawdza dostępność w tabeli `magazyn`. Jeśli zamawiana ilość przekracza stan (z uwzględnieniem edytowanego rekordu), operacja jest przerywana błędem (`RAISE EXCEPTION`), a transakcja wycofywana.
+
+#### Automatyzacja Finansowa
+System samodzielnie pobiera aktualne ceny z katalogu, eliminując błędy ręcznego wprowadzania danych.
+*   **`trg_aktualizuj_wartosc_zamowienia` (BEFORE INSERT / UPDATE):** Pobiera aktualną cenę bazową produktu, dolicza marżę (10%) i zapisuje ostateczną cenę sprzedaży w pozycji zamówienia (ilość * cena * 1,1).
+*   **`trg_aktualizuj_wartosc_dostawy` (BEFORE INSERT / UPDATE):** Pobiera cenę zakupu z katalogu i wylicza wartość pozycji dostawy (ilość * cena).
+
+####  Bezpieczeństwo Danych
+Zabezpieczenie przed utratą spójności historycznej dostaw i zamówień.
+*   **`trg_archiwizacja_klienta` oraz `trg_archiwizacja_producenta` (BEFORE DELETE):** Zamiast trwale usuwać kontrahenta (co uszkodziłoby historię faktur), zmieniają jego status na nieaktywny (`czy_aktywny = FALSE`).
 
 ## Definicja Uprawnień i Zasad Bezpieczeństwa
 
