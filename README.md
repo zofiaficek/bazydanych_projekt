@@ -10,6 +10,7 @@ Celem projektu było zaprojektowanie struktury danych odpornej na błędy logicz
 ## 📜 Table of Contents
 
 - [Schemat Bazy Danych](#schemat-bazy-danych)
+- [Warunki Integralnościowe](#warunki-integralnościowe)
 ---
 
 
@@ -18,13 +19,32 @@ Poniższy schemat prezentuje relacje między tabelami oraz strukturę przepływu
 
 ![](./schemat.png)
 
-### Główne Tabele:
-* **Encje Główne:** `produkty`, `kategorie`, `dostawcy`, `klienci`
-* **Zarządzanie Magazynem:** `magazyn` (tabela stanu)
-* **Transakcje (Dostawy):** `dostawy` (nagłówek) i `dane_dostawy` (pozycje)
-* **Transakcje (Zamówienia):** `zamowienia` (nagłówek) i `dane_zamowienia` (pozycje)
+### Opis Struktury danych:
+#### 1. Katalog Produktów i Partnerzy
+*   **`produkty`** – Centralna tabela systemu. Zawiera definicje asortymentu (nazwa, cena bazowa) oraz powiązanie z kategorią.
+*   **`kategorie`** – Tabela słownikowa służąca do grupowania produktów.
+*   **`producenci`** – Baza dostawców zewnętrznych. Zawiera dane kontaktowe oraz NIP.
+*   **`klienci`** – Baza odbiorców hurtowych, którzy składają zamówienia. Zawiera dane kontaktowe oraz NIP.
+
+#### 2. Zarządzanie Magazynem
+*   **`magazyn`** – Tabela przechowująca aktualny stan ilościowy dla każdego produktu. Jest aktualizowana automatycznie przez triggery (opisane poniżej) po zatwierdzeniu dostawy lub zamówienia. Relacja 1:1 z tabelą `produkty`.
+
+#### 3. Logistyka i Transakcje 
+W systemie zastosowano wzorzec 'Nagłówek-Szczegóły' dla dokumentów:
+
+*   **Dostawy:**
+    *   `dostawy` (Nagłówek): Data, numer faktury dostawcy, relacja do producenta.
+    *   `dane_dostawy` (Pozycje): Konkretne produkty, ilości i ceny zakupu w ramach danej dostawy.
+      
+*   **Zamówienia:**
+    *   `zamowienia` (Nagłówek): Data, klient, numer faktury sprzedaży.
+    *   `dane_zamowienia` (Pozycje): Produkty sprzedawane w ramach zamówienia. Przed dodaniem rekordu trigger weryfikuje dostępność towaru w tabeli `magazyn`.
 
 ---
+
+## Warunki Integralnościowe
+---
+
 
 ## ⚙️ Kluczowe Funkcjonalności i Logika Biznesowa
 
