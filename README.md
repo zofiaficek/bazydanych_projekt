@@ -14,9 +14,9 @@ Celem projektu było zaprojektowanie struktury danych odpornej na błędy logicz
 
 
 ## Schemat Bazy Danych
-![Opis](./schemat.png)
+Poniższy schemat prezentuje relacje między tabelami oraz strukturę przepływu danych w systemie. Zastosowano model, w którym produkty są powiązane z producentami wyłącznie poprzez historię dostaw, co zapobiega powstawaniu pętli logicznych.
 
-
+![](./schemat.png)
 
 ### Główne Tabele:
 * **Encje Główne:** `produkty`, `kategorie`, `dostawcy`, `klienci`
