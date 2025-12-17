@@ -21,13 +21,13 @@ Poniższy schemat prezentuje relacje między tabelami oraz strukturę przepływu
 
 ### Opis Struktury danych:
 #### 1. Katalog Produktów i Partnerzy
-*   **`produkty`** – Centralna tabela systemu. Zawiera definicje asortymentu (nazwa, cena bazowa) oraz powiązanie z kategorią.
-*   **`kategorie`** – Tabela słownikowa służąca do grupowania produktów.
-*   **`producenci`** – Baza dostawców zewnętrznych. Zawiera dane kontaktowe oraz NIP.
-*   **`klienci`** – Baza odbiorców hurtowych, którzy składają zamówienia. Zawiera dane kontaktowe oraz NIP.
+*   `produkty` – Centralna tabela systemu. Zawiera definicje asortymentu (nazwa, cena bazowa) oraz powiązanie z kategorią.
+*   `kategorie` – Tabela słownikowa służąca do grupowania produktów.
+*   `producenci` – Baza dostawców zewnętrznych. Zawiera dane kontaktowe oraz NIP.
+*   `klienci` – Baza odbiorców hurtowych, którzy składają zamówienia. Zawiera dane kontaktowe oraz NIP.
 
 #### 2. Zarządzanie Magazynem
-*   **`magazyn`** – Tabela przechowująca aktualny stan ilościowy dla każdego produktu. Jest aktualizowana automatycznie przez triggery (opisane poniżej) po zatwierdzeniu dostawy lub zamówienia. Relacja 1:1 z tabelą `produkty`.
+*   `magazyn` – Tabela przechowująca aktualny stan ilościowy dla każdego produktu. Jest aktualizowana automatycznie przez triggery (opisane poniżej) po zatwierdzeniu dostawy lub zamówienia. Relacja 1:1 z tabelą `produkty`.
 
 #### 3. Logistyka i Transakcje 
 W systemie zastosowano wzorzec 'Nagłówek-Szczegóły' dla dokumentów:
