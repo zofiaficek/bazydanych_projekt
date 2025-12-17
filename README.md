@@ -9,7 +9,7 @@ Celem projektu było zaprojektowanie struktury danych odpornej na błędy logicz
 
 ## 📜 Table of Contents
 
-- [Schemat Bazy Danych](#-schemat-bazy-danych)
+- [Schemat Bazy Danych](#schemat-bazy-danych)
 ---
 
 
