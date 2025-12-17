@@ -11,6 +11,8 @@ Celem projektu było zaprojektowanie struktury danych odpornej na błędy logicz
 
 - [Schemat Bazy Danych](#schemat-bazy-danych)
 - [Warunki Integralnościowe](#warunki-integralnościowe)
+- [Oprogramowanie warstwy dostępu do danych](#oprogramowanie-warstwy-dostępu-do-danych)
+- [Definicja Uprawnień i Zasad Bezpieczeństwa](#definicja-uprawnień-i-zasad-bezpieczeństwa)
 ---
 
 
@@ -78,9 +80,13 @@ Wymuszają zapełnienie kluczowych pól
 Zabezpieczenie przed utratą spójności historycznej dostaw i zamówień. Nie można usunąć rekordów z tabel `producenci` i `klienci`
 *   **Mechanizm:** Trigger `BEFORE DELETE` na tabelach `klienci` i `producenci`.
 *   **Działanie:** Fizyczne usunięcie rekordu jest blokowane. Zamiast tego system wykonuje `UPDATE`, zmieniając flagę `czy_aktywny` na `FALSE`.
+
 ---
 
 
+## Oprogramowanie warstwy dostępu do danych
+
+## Definicja Uprawnień i Zasad Bezpieczeństwa
 
 
 
