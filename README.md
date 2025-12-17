@@ -67,7 +67,7 @@ Reguły walidujące poprawność wartości numerycznych (domena danych).
 *   **Ilości transakcyjne:** `ilosc` > 0 (tabela `dane_dostawy`, `dane_zamowienia`).
 *   **Bezpiecznik magazynowy:** `ilosc_na_stanie` >= 0 (tabela `magazyn`) – baza odrzuci transakcję, która spowodowałaby ujemny stan.
 
-### 5. Ograniczenia NOT NULL
+### 5. Ograniczenia Wymagalności (NOT NULL)
 Wymuszają zapełnienie kluczowych pól 
 *    **Firmy:** `nazwa`, `email`, `czy_aktywny` w tabelach `producenci` i `klienci`.
 *    **Słowniki:** `nazwa` w tabelii `kategorie`.
