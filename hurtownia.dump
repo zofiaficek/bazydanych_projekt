@@ -1,31 +1,52 @@
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+\connect postgres
+
+DO $$
+BEGIN
+   -- Rola Administratora
+   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'administrator') THEN
+      CREATE ROLE administrator WITH LOGIN PASSWORD 'admin_haslo';
+   END IF;
+   -- Rola Sprzedawcy
+   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'sprzedawca') THEN
+      CREATE ROLE sprzedawca WITH LOGIN PASSWORD 'sprzedawca_haslo';
+   END IF;
+   -- Rola Magazyniera
+   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'magazynier') THEN
+      CREATE ROLE magazynier WITH LOGIN PASSWORD 'magazyn_haslo';
+   END IF;
+	-- Rola Users 
+   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'users') THEN
+      CREATE ROLE users WITH LOGIN PASSWORD '1234';
+   END IF;
+END
+$$;
+
+\connect hurtownia
+
 BEGIN;
+DROP VIEW IF EXISTS brakujace_produkty CASCADE;
+DROP VIEW IF EXISTS aktualny_stan_magazynu CASCADE;
+DROP TABLE IF EXISTS dane_zamowienia CASCADE;
+DROP TABLE IF EXISTS dane_dostawy CASCADE;
+DROP TABLE IF EXISTS magazyn CASCADE;
+DROP TABLE IF EXISTS zamowienia CASCADE;
+DROP TABLE IF EXISTS dostawy CASCADE;
+DROP TABLE IF EXISTS produkty CASCADE;
+DROP TABLE IF EXISTS kategorie CASCADE;
+DROP TABLE IF EXISTS producenci CASCADE;
+DROP TABLE IF EXISTS klienci CASCADE;
 
--- Usuwanie tabel (zachowana kolejność)
-DROP TABLE IF EXISTS dane_zamowienia;
-DROP TABLE IF EXISTS dane_dostawy;
-DROP TABLE IF EXISTS magazyn;
-DROP TABLE IF EXISTS zamowienia;
-DROP TABLE IF EXISTS dostawy;
-DROP TABLE IF EXISTS produkty;
-DROP TABLE IF EXISTS klienci;
-DROP TABLE IF EXISTS producenci;
-DROP TABLE IF EXISTS kategorie;
-
--- Tworzenie struktury tabel
-
-CREATE TABLE producenci (
-    id_producenta SERIAL PRIMARY KEY,
-    nazwa_firmy VARCHAR(100) NOT NULL UNIQUE,
-    nip VARCHAR(15) NOT NULL UNIQUE, 
-    adres VARCHAR(200),
-    telefon VARCHAR(20),
-    email VARCHAR(100)
-);
-
-CREATE TABLE kategorie (
-    id_kategorii SERIAL PRIMARY KEY,
-    nazwa VARCHAR(50) NOT NULL UNIQUE
-);
 
 CREATE TABLE klienci (
     id_klienta SERIAL PRIMARY KEY,
@@ -33,18 +54,35 @@ CREATE TABLE klienci (
     nip VARCHAR(15) NOT NULL UNIQUE,
     adres VARCHAR(200),
     telefon VARCHAR(20),
-    email VARCHAR(100) 
+    email VARCHAR(100),
+    czy_aktywny BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE producenci (
+    id_producenta SERIAL PRIMARY KEY,
+    nazwa_firmy VARCHAR(100) NOT NULL UNIQUE,
+    nip VARCHAR(15) NOT NULL UNIQUE, 
+    adres VARCHAR(200),
+    telefon VARCHAR(20),
+    email VARCHAR(100),
+    czy_aktywny BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE kategorie (
+    id_kategorii SERIAL PRIMARY KEY,
+    nazwa VARCHAR(50) NOT NULL UNIQUE
 );
 
 CREATE TABLE produkty (
     id_produktu SERIAL PRIMARY KEY,
-    id_producenta INTEGER NOT NULL,
-    id_kategorii INTEGER NOT NULL,
+    id_kategorii INTEGER NOT NULL DEFAULT 0,
     nazwa VARCHAR(200) NOT NULL,
     cena_zakupu NUMERIC(10, 2) NOT NULL CHECK (cena_zakupu > 0),
     
-    CONSTRAINT fk_producent FOREIGN KEY (id_producenta) REFERENCES producenci(id_producenta) ON DELETE CASCADE,
-    CONSTRAINT fk_kategoria FOREIGN KEY (id_kategorii) REFERENCES kategorie(id_kategorii) ON DELETE CASCADE
+    CONSTRAINT fk_kategoria
+        FOREIGN KEY (id_kategorii)
+        REFERENCES kategorie(id_kategorii)
+        ON DELETE SET DEFAULT
 );
 
 CREATE TABLE dostawy (
@@ -53,7 +91,9 @@ CREATE TABLE dostawy (
     data_dostawy DATE NOT NULL DEFAULT CURRENT_DATE,
     nr_faktury VARCHAR(50) UNIQUE,
     
-    CONSTRAINT fk_producenci FOREIGN KEY (id_producenta) REFERENCES producenci(id_producenta) ON DELETE CASCADE
+    CONSTRAINT fk_producenci 
+	FOREIGN KEY (id_producenta) 
+	REFERENCES producenci(id_producenta)
 );
 
 CREATE TABLE zamowienia (
@@ -62,25 +102,36 @@ CREATE TABLE zamowienia (
     data_zamowienia DATE NOT NULL DEFAULT CURRENT_DATE,
     nr_faktury VARCHAR(50) UNIQUE,
     
-    CONSTRAINT fk_klienci FOREIGN KEY (id_klienta) REFERENCES klienci(id_klienta) ON DELETE CASCADE
+    CONSTRAINT fk_klienci
+        FOREIGN KEY (id_klienta) 
+        REFERENCES klienci(id_klienta)
 );
 
 CREATE TABLE magazyn (
-    id_produktu INTEGER PRIMARY KEY,
-    ilosc INTEGER NOT NULL CHECK (ilosc >= 0),
+    id_produktu SERIAL PRIMARY KEY,
+    ilosc_na_stanie INTEGER NOT NULL DEFAULT 0 CHECK (ilosc_na_stanie >= 0),
     
-    CONSTRAINT fk_produkt FOREIGN KEY (id_produktu) REFERENCES produkty(id_produktu) ON DELETE CASCADE
+    CONSTRAINT fk_magazyn_produkty 
+        FOREIGN KEY (id_produktu) 
+        REFERENCES produkty(id_produktu) 
 );
 
 CREATE TABLE dane_dostawy (
     id_dostawy INTEGER NOT NULL,
     id_produktu INTEGER NOT NULL,
     ilosc INTEGER NOT NULL CHECK (ilosc > 0),
-    cena_zakupu DECIMAL(10,2) NOT NULL CHECK (cena_zakupu > 0),
+    cena_dostawy DECIMAL(10,2) NOT NULL CHECK (cena_dostawy > 0),
     
     PRIMARY KEY (id_dostawy, id_produktu),
-    CONSTRAINT fk_dostawy FOREIGN KEY (id_dostawy) REFERENCES dostawy(id_dostawy) ON DELETE CASCADE,
-    CONSTRAINT fk_produkty FOREIGN KEY (id_produktu) REFERENCES produkty(id_produktu) ON DELETE CASCADE
+    
+    CONSTRAINT fk_dostawy 
+        FOREIGN KEY (id_dostawy) 
+        REFERENCES dostawy(id_dostawy) 
+        ON DELETE CASCADE,
+        
+    CONSTRAINT fk_produkty 
+        FOREIGN KEY (id_produktu) 
+        REFERENCES produkty(id_produktu)
 );
 
 CREATE TABLE dane_zamowienia (
@@ -88,853 +139,178 @@ CREATE TABLE dane_zamowienia (
     id_produktu INTEGER NOT NULL,
     ilosc INTEGER NOT NULL CHECK (ilosc > 0),
     cena_zakupu DECIMAL(10,2) NOT NULL CHECK (cena_zakupu > 0),
-    
+
     PRIMARY KEY (id_zamowienia, id_produktu),
-    CONSTRAINT fk_zamowienia FOREIGN KEY (id_zamowienia) REFERENCES zamowienia(id_zamowienia) ON DELETE CASCADE,
-    CONSTRAINT fk_produkty FOREIGN KEY (id_produktu) REFERENCES produkty(id_produktu) ON DELETE CASCADE
+    
+    CONSTRAINT fk_zamowienia
+        FOREIGN KEY (id_zamowienia) 
+        REFERENCES zamowienia(id_zamowienia)
+        ON DELETE CASCADE,
+        
+    CONSTRAINT fk_produkty
+        FOREIGN KEY (id_produktu) 
+        REFERENCES produkty(id_produktu)
 );
 
--- Ładowanie danych (COPY syntax)
 
-COPY producenci (nazwa_firmy, nip, adres, telefon, email) FROM stdin;
-The North Face	876-001-00-10	Warszawa, Polska	+48 22 555 1010	contact@tnf.pl
-Scarpa	921-002-00-20	Asolo, Włochy	+39 0423 231 00	info@scarpa.it
-Mammut	432-003-00-30	Monachium, Niemcy	+49 89 555 1515	service@mammut.de
-La Sportiva	111-004-00-40	Ziano di Fiemme, Włochy	+39 0462 570 415	support@lasportiva.com
-Black Diamond	777-005-00-50	Lyon, Francja	+33 4 78 555 553	sales@blackdiamond.fr
-Patagonia	654-006-00-60	Kraków, Polska	+48 12 555 8616	help@patagonia.pl
-Milo	500-007-00-70	Dąbrowa Górnicza, Polska	+48 32 763 3300	biuro@milo.pl
-Arcteryx	300-008-00-80	Berlin, Niemcy	+49 30 555 3500	customer@arcteryx.de
-Salomon	200-009-00-90	Annecy, Francja	+33 4 50 64 30 30	contact@salomon.com
-Osprey	100-010-00-00	Rzym, Włochy	+39 06 555 5900	info@osprey.it
-Deuter	101-011-00-11	Gersthofen, Niemcy	+49 821 4984 0	service@deuter.com
-Petzl	102-012-00-22	Crolles, Francja	+33 4 76 92 09 00	contact@petzl.com
-Mountain Hardwear	103-013-00-33	Paryż, Francja	+33 1 555 5238	support@mhw.fr
-Columbia	104-014-00-44	Praga, Czechy	+420 2 555 6953	contact@columbia.cz
-Rab	105-015-00-55	Gdańsk, Polska	+48 58 555 5200	info@rab.pl
-Montane	106-016-00-66	Wrocław, Polska	+48 71 555 2300	sales@montane.pl
-Haglofs	107-017-00-77	Hamburg, Niemcy	+49 40 555 3000	support@haglofs.de
-Fjallraven	108-018-00-88	Frankfurt, Niemcy	+49 69 555 4400	info@fjallraven.de
-Lowa	109-019-00-99	Jetzendorf, Niemcy	+49 8137 999 0	service@lowa.de
-Meindl	110-020-00-00	Kirchanschöring, Niemcy	+49 8685 700	info@meindl.de
-Hanwag	111-021-00-11	Vierkirchen, Niemcy	+49 8139 99000	support@hanwag.de
-Garmont	112-022-00-22	Vedelago, Włochy	+39 0423 400 900	info@garmont.it
-Dynafit	113-023-00-33	Monaco, Niemcy	+49 89 57005 0	contact@dynafit.com
-Ortovox	114-024-00-44	Taufkirchen, Niemcy	+49 89 642 970	service@ortovox.com
-Edelrid	115-025-00-55	Isny, Niemcy	+49 7562 981 0	info@edelrid.de
-Sterling Rope	116-026-00-66	Brescia, Włochy	+39 030 555 2555	sales@sterlingrope.it
-DMM	117-027-00-77	Marsylia, Francja	+33 4 91 555 000	info@dmmwales.fr
-Metolius	118-028-00-88	Florencja, Włochy	+39 055 555 7585	contact@metoliusclimbing.it
-Five Ten	119-029-00-99	Brno, Czechy	+420 5 555 9337	support@fiveten.cz
-Evolv	120-030-00-00	Ostrawa, Czechy	+420 6 555 7671	info@evolvclimbing.cz
-Marmot	121-031-00-11	Kilonia, Niemcy	+49 431 555 0400	contact@marmot.de
-Regatta	122-032-00-22	Łódź, Polska	+48 42 555 1200	sales@regatta.pl
-Dare2b	123-033-00-33	Poznań, Polska	+48 61 555 1300	info@dare2b.pl
-Craghoppers	124-034-00-44	Katowice, Polska	+48 32 555 1100	support@craghoppers.pl
-Millet	125-035-00-55	Annecy, Francja	+33 4 50 64 33 33	contact@millet.fr
-Eider	126-036-00-66	Annecy, Francja	+33 4 50 64 34 34	info@eider.com
-Norrona	127-037-00-77	Nicea, Francja	+33 4 93 555 000	support@norrona.fr
-Vaude	128-038-00-88	Tettnang, Niemcy	+49 7542 5306 0	service@vaude.com
-Icebreaker	129-039-00-99	Turyn, Włochy	+39 011 555 1622	contact@icebreaker.it
-Smartwool	130-040-00-00	Neapol, Włochy	+39 081 555 6653	info@smartwool.it
-Bridgedale	131-041-00-11	Szczecin, Polska	+48 91 555 3050	sales@bridgedale.pl
-Buff	132-042-00-22	Madryt, Hiszpania	+34 93 807 00 22	contact@buff.com
-Grivel	133-043-00-33	Courmayeur, Włochy	+39 0165 899 225	info@grivel.com
-Petzl Sport	134-044-00-44	Crolles, Francja	+33 4 76 92 09 00	sport@petzl.com
-Beal	135-045-00-55	Vienne, Francja	+33 4 74 31 03 89	contact@beal.fr
-Ocun	136-046-00-66	Jičín, Czechy	+420 493 539 001	info@ocun.com
-Singing Rock	137-047-00-77	Ponikla, Czechy	+420 481 539 515	sales@singingrock.com
-Pajak	138-048-00-88	Bielsko-Biała, Polska	+48 33 811 0905	biuro@pajaksport.pl
-Małachowski	139-049-00-99	Dzierżoniów, Polska	+48 74 831 3456	info@malachowski.pl
-Brubeck	140-050-00-00	Zduńska Wola, Polska	+48 43 824 4500	kontakt@brubeck.pl
-\.
-
-COPY kategorie (nazwa) FROM stdin;
-Buty Trekkingowe Wysokie
-Buty Wspinaczkowe
-Buty Podejściowe
-Kurtka Hardshell
-Kurtka Softshell
-Kurtka Puchowa
-Bluza Polarowa
-Spodnie Trekkingowe
-Spodnie Wspinaczkowe
-Bielizna Termoaktywna
-Plecak Turystyczny
-Plecak Wspinaczkowy
-Czapka Zimowa
-Rękawice Narciarskie
-Śpiwór Puchowy
-Karabinek Wspinaczkowy
-Czołówka
-Akcesoria
-\.
-
-COPY klienci (nazwa_firmy, nip, adres, telefon, email) FROM stdin;
-Sklep 8A.pl	999-001-00-11	ul. Górska 1, 43-300 Bielsko-Biała	+48 33 555 1111	kontakt@8a.pl
-Centrum Turystyki PL	999-002-00-22	Al. Niepodległości 10, 02-001 Warszawa	+48 22 555 2222	info@cturystyki.pl
-Himal Sklep Tatry	999-003-00-33	ul. Tatrzańska 25, 34-500 Zakopane	+48 18 555 3333	sklep@himal.pl
-Outdoor Expert Kraków	999-004-00-44	ul. Szlak 12, 31-151 Kraków	+48 12 555 4444	sales@outdoorexpert.pl
-Górski Świat Trójmiasto	999-005-00-55	ul. Morska 7, 80-803 Gdańsk	+48 58 555 5555	gswiat@gorski.pl
-e-Alpinista Online	999-006-00-66	ul. Główna 30, 60-001 Poznań	+48 61 555 6666	biuro@ealpinista.pl
-Wysokie Progi Wrocław	999-007-00-77	ul. Złota 45, 50-001 Wrocław	+48 71 555 7777	sklep@wysokieprogi.pl
-Skala Wspinaczkowa Łódź	999-008-00-88	ul. Leśna 10, 90-001 Łódź	+48 42 555 8888	kontakt@skala.pl
-Szturm Sklep Militarny	999-009-00-99	ul. Długa 8, 70-001 Szczecin	+48 91 555 9999	info@szturm.pl
-Podróżnik Bydgoszcz	999-010-00-00	ul. Różana 1, 85-001 Bydgoszcz	+48 52 555 0000	podroznik@sklep.pl
-Szarpnij się PL	999-011-00-11	ul. Widokowa 15, 30-001 Kraków	+48 12 666 1111	kontakt@szarpnijsiesklep.pl
-Trekking Point Warszawa	999-012-00-22	ul. Jasna 2, 00-001 Warszawa	+48 22 666 2222	trekpoint@sklep.pl
-Sklep Gory Lodzi	999-013-00-33	ul. Piotrkowska 5, 90-001 Łódź	+48 42 666 3333	gory@lodzi.pl
-Outdoor Silesia	999-014-00-44	ul. Katowicka 12, 40-001 Katowice	+48 32 666 4444	silesia@outdoor.pl
-Wyprawa Sklep	999-015-00-55	ul. Rynek 1, 61-001 Poznań	+48 61 666 5555	wyprawa@sklep.pl
-Klimat Outdoor	999-016-00-66	ul. Dworcowa 3, 80-001 Gdynia	+48 58 666 6666	klimat@outdoor.pl
-Sklep Pod Chmurką	999-017-00-77	ul. Polna 18, 51-001 Wrocław	+48 71 666 7777	podchmurka@sklep.pl
-Sportowe Wyzwania	999-018-00-88	ul. Sportowa 1, 20-001 Lublin	+48 81 666 8888	wyzwania@sport.pl
-Górskie Ekwipunki	999-019-00-99	ul. Graniczna 5, 43-300 Bielsko-Biała	+48 33 666 9999	ekwpunki@gorskie.pl
-Hike & Trek	999-020-00-00	ul. Wczasowa 10, 81-001 Sopot	+48 58 777 0000	hike@trek.pl
-Świat Alpinisty	999-021-00-11	ul. Wspinaczkowa 3, 30-001 Kraków	+48 12 777 1111	alpinista@swiat.pl
-Namioty i Plecaki	999-022-00-22	ul. Biwakowa 1, 02-001 Warszawa	+48 22 777 2222	namioty@plecaki.pl
-Sklep Wędrowiec	999-023-00-33	ul. Pielgrzymkowa 8, 34-500 Zakopane	+48 18 777 3333	wedrowiec@sklep.pl
-Technika Górska	999-024-00-44	ul. Techniczna 4, 31-151 Kraków	+48 12 777 4444	technika@gorska.pl
-Obóz i Trekking	999-025-00-55	ul. Harcerska 2, 80-803 Gdańsk	+48 58 777 5555	oboz@trekking.pl
-Sklep Biegowy Terenowy	999-026-00-66	ul. Maratonowa 1, 60-001 Poznań	+48 61 777 6666	biegowy@terenowy.pl
-Kanon Outdoor	999-027-00-77	ul. Wąska 10, 50-001 Wrocław	+48 71 777 7777	kanon@outdoor.pl
-Sprzęt Dla Zdobywców	999-028-00-88	ul. Triumfu 5, 90-001 Łódź	+48 42 777 8888	zdobywcy@sklep.pl
-Survival Store PL	999-029-00-99	ul. Dzika 3, 70-001 Szczecin	+48 91 777 9999	survival@store.pl
-Eko Wyprawy	999-030-00-00	ul. Zielona 1, 85-001 Bydgoszcz	+48 52 777 0000	eko@wyprawy.pl
-Adventure Gear Polska	999-031-00-11	ul. Przygody 11, 30-001 Kraków	+48 12 888 1111	gear@adventure.pl
-Miasto i Góry	999-032-00-22	ul. Metropolitalna 2, 00-001 Warszawa	+48 22 888 2222	miasto@gory.pl
-Pasja Trekking	999-033-00-33	ul. Serdeczna 7, 34-500 Zakopane	+48 18 888 3333	pasja@trekking.pl
-Sklep Grot	999-034-00-44	ul. Skałkowa 1, 31-151 Kraków	+48 12 888 4444	grot@sklep.pl
-Bałtycki Outdoor	999-035-00-55	ul. Plażowa 9, 80-803 Gdańsk	+48 58 888 5555	baltycki@outdoor.pl
-Centralny Sklep Sportowy	999-036-00-66	ul. Olimpijska 1, 60-001 Poznań	+48 61 888 6666	css@sklep.pl
-Dla Podróżników	999-037-00-77	ul. Kolejowa 3, 50-001 Wrocław	+48 71 888 7777	dla@podroznikow.pl
-Wypożyczalnia Sprzętu Górskiego	999-038-00-88	ul. Sprzętowa 1, 90-001 Łódź	+48 42 888 8888	wypozyczalnia@gorska.pl
-Sklep Ekstremalny	999-039-00-99	ul. Adrenaliny 5, 70-001 Szczecin	+48 91 888 9999	ekstremalny@sklep.pl
-Turystyka i Natura	999-040-00-00	ul. Parkowa 1, 85-001 Bydgoszcz	+48 52 888 0000	turystyka@natura.pl
-Zdobywaj Szczyty	999-041-00-11	ul. Szczytowa 1, 30-001 Kraków	+48 12 999 1111	szczyty@zdobywaj.pl
-Świat Przygody	999-042-00-22	ul. Odkrywców 2, 02-001 Warszawa	+48 22 999 2222	przygoda@swiat.pl
-Sklep Plecak	999-043-00-33	ul. Torba 3, 34-500 Zakopane	+48 18 999 3333	plecak@sklep.pl
-Odzież Techniczna PL	999-044-00-44	ul. Włókiennicza 4, 31-151 Kraków	+48 12 999 4444	odziez@techniczna.pl
-Sklep Morze Gór	999-045-00-55	ul. Horyzont 5, 80-803 Gdańsk	+48 58 999 5555	morze@gor.pl
-Akcesoria Outdoor	999-046-00-66	ul. Detaliczna 6, 60-001 Poznań	+48 61 999 6666	akcesoria@outdoor.pl
-Survival & Bushcraft	999-047-00-77	ul. Leśny Zaułek 7, 50-001 Wrocław	+48 71 999 7777	bushcraft@survival.pl
-Sprzęt Wyprawowy PL	999-048-00-88	ul. Ekspedycyjna 8, 90-001 Łódź	+48 42 999 8888	wyprawowy@sprzet.pl
-\.
-
-COPY produkty (id_producenta, id_kategorii, nazwa, cena_zakupu) FROM stdin;
-1	6	Kurtka Puchowa Himalayan Down Parka	1550.00
-1	4	Kurtka Hardshell Summit Series L5 GTX	1190.00
-1	11	Plecak Banchee 65L	380.00
-1	7	Bluza Polarowa 100 Glacier Full Zip	110.00
-1	13	Czapka Salty Dog Beanie	55.00
-1	8	Spodnie Trekkingowe Exploration Convert	210.00
-1	10	Bielizna Termoaktywna Warm Poly LS	120.00
-1	4	Kurtka Quest Zip In Jacket	350.00
-1	6	Kurtka Puchowa Summit L3 Ventrix	950.00
-1	13	Czapka Recycled Ridge Fleece	45.00
-2	1	Buty Trekkingowe Kailash Trek GTX	580.00
-2	3	Buty Podejściowe Mojito Basic	315.00
-2	2	Buty Wspinaczkowe Vapor V	400.00
-2	1	Buty Wysokogórskie Phantom Tech	1850.00
-2	3	Buty Podejściowe Mescalito	380.00
-2	2	Buty Wspinaczkowe Instinct VS	450.00
-2	1	Buty Trekkingowe R-Evolution GTX	690.00
-2	2	Buty Wspinaczkowe Booster S	490.00
-2	3	Buty Podejściowe Crux	290.00
-2	2	Buty Wspinaczkowe Chimera	490.00
-3	6	Kurtka Puchowa Broad Peak IN Hooded	890.00
-3	4	Kurtka Hardshell Nordwand Pro HS	1500.00
-3	12	Plecak Wspinaczkowy Trion Guide 45+7	520.00
-3	10	Bielizna Aconcagua ML	190.00
-3	16	Zestaw Ekspresów Contact 12cm	250.00
-3	17	Czołówka T-Trail	120.00
-3	11	Plecak Ducan 30	360.00
-3	7	Bluza Polarowa Innominata ML Jacket	220.00
-4	2	Buty Wspinaczkowe Solution Comp	470.00
-4	1	Buty Trekkingowe Trango Tower GTX	890.00
-4	3	Buty Podejściowe TX4	390.00
-4	2	Buty Wspinaczkowe Katana Laces	450.00
-4	1	Buty Trekkingowe Nepal Cube GTX	1950.00
-4	2	Buty Wspinaczkowe Skwama	420.00
-4	3	Buty Podejściowe Boulder X	350.00
-4	2	Buty Wspinaczkowe Cobra	390.00
-5	17	Czołówka Icon 700	195.00
-5	16	Karabinek HotForge Screwgate	39.00
-5	12	Plecak Stone 42 Duffel	350.00
-5	18	Kije Trekkingowe Trail Pro Shock	310.00
-5	16	Friend Camalot C4 1.0	180.00
-5	16	Uprząż Momentum	160.00
-5	16	Ekspres LiteWire Quickdraw	45.00
-5	16	Friend Camalot X4 0.5	190.00
-6	6	Kurtka Down Sweater	710.00
-6	5	Kurtka R2 TechFace Hoody	550.00
-6	7	Bluza Better Sweater 1/4 Zip	310.00
-6	10	Bielizna Capilene Midweight Crew	140.00
-6	18	Spodenki Baggies Shorts 5in	120.00
-6	7	Bluza Nano Air Light Hybrid	410.00
-6	6	Kamizelka Down Sweater Vest	490.00
-7	8	Spodnie Trekkingowe Brenta	199.00
-7	9	Spodnie Wspinaczkowe Senso	155.00
-7	7	Polar Nesun	130.00
-7	11	Plecak Ghost 35	250.00
-7	13	Czapka Milo Logo	45.00
-7	9	Spodnie Wspinaczkowe Free Rock	145.00
-7	8	Spodnie Trekkingowe Durano	160.00
-8	4	Kurtka Hardshell Alpha SV Jacket	2500.00
-8	5	Kurtka Softshell Gamma LT Hoody	780.00
-8	6	Kurtka Puchowa Cerium LT Hoody	1200.00
-8	12	Plecak Konseal 15	290.00
-8	10	Bielizna Phase AR Crew LS	220.00
-8	4	Kurtka Beta LT Jacket	1850.00
-8	5	Kurtka Gamma MX Hoody	990.00
-9	1	Buty Trekkingowe Quest 4 GTX	699.00
-9	14	Rękawice Force GORE-TEX	199.00
-9	8	Spodnie Wayfarer Tapered	310.00
-9	18	Kamizelka do biegania S/LAB Sense 5	450.00
-9	10	Bielizna Termoaktywna Active LS	100.00
-9	1	Buty X Ultra 4 GTX	480.00
-9	1	Buty X Ultra Pioneer Mid CS WP	420.00
-10	11	Plecak Turystyczny Talon 44	390.00
-10	11	Plecak Turystyczny Atmos AG 65	710.00
-10	12	Plecak Wspinaczkowy Mutant 38	380.00
-10	11	Plecak Fairview 55 (damski)	490.00
-10	11	Plecak Daylite Plus	170.00
-10	11	Plecak Exos 48	550.00
-10	12	Plecak Mutant 52	490.00
-11	11	Plecak Futura Pro 40	450.00
-11	11	Plecak Aircontact Lite 50+10	600.00
-11	12	Plecak Guide 30+	380.00
-11	15	Śpiwór Exosphere -4°	510.00
-11	13	Czapka Lavaredo Beanie	65.00
-11	11	Plecak Guide 45+	510.00
-12	17	Czołówka Swift RL	250.00
-12	16	Lina statyczna Club 10.0mm 60m	690.00
-12	16	Przyrząd asekuracyjny GRIGRI	230.00
-12	17	Latarka ręczna TACTIKKA	130.00
-12	16	Kask BOREO	210.00
-12	17	Czołówka ACTIK CORE	170.00
-13	6	Kurtka Ghost Whisperer UL Hoody	1750.00
-13	5	Kurtka Kor AirShell	310.00
-13	15	Śpiwór Lamina Z Spark	280.00
-13	7	Bluza Microchill 2.0 Zip	95.00
-13	4	Kurtka Exposure/2 GTX Paclite	890.00
-13	5	Kurtka Softshell KOR Preshell	260.00
-14	4	Kurtka Watertight II	170.00
-14	7	Polar Fast Trek II Full Zip	100.00
-14	8	Spodnie Silver Ridge Convertible	165.00
-14	1	Buty Newton Ridge Plus II	310.00
-14	10	Bielizna Midweight Stretch	90.00
-14	8	Spodnie Trekkingowe Cascade Peak	190.00
-15	6	Kurtka Microlight Alpine	820.00
-15	15	Śpiwór Ascent 900	1150.00
-15	4	Kurtka Kinetic Alpine 2.0	950.00
-15	10	Bielizna MeCo 165 Zip Tee	160.00
-15	13	Czapka Ridge Beanie	65.00
-15	6	Kamizelka Microlight Vest	650.00
-16	4	Kurtka Alpine Resolve Jacket	1200.00
-16	6	Kurtka Featherlite Down	650.00
-16	11	Plecak Trailblazer 30	330.00
-16	5	Kurtka Softshell Dyno Stretch	380.00
-16	5	Kurtka Softshell Icarus	350.00
-17	4	Kurtka L.I.M Proof Multi Jacket	650.00
-17	8	Spodnie Rugged Flex Pant	410.00
-17	11	Plecak Torsang	350.00
-17	6	Kurtka Essens Mimic Hood	620.00
-17	7	Bluza Astro Fleece Jacket	190.00
-18	8	Spodnie Keb Trousers	580.00
-18	11	Plecak Kanken	250.00
-18	5	Kurtka Abisko Lite Trekking	690.00
-18	13	Czapka Övik Pom Hat	95.00
-18	8	Spodnie Vidda Pro Trousers	490.00
-19	1	Buty Renegade GTX Mid	630.00
-19	1	Buty Zephyr GTX Mid TF	490.00
-19	3	Buty Approach Pro GTX	450.00
-19	1	Buty Tibet GTX	890.00
-19	1	Buty Trekkingowe Camino EVO GTX	790.00
-20	1	Buty Island MFS Active	810.00
-20	1	Buty Borneo MFS	690.00
-20	1	Buty Vakuum GTX	620.00
-20	1	Buty Kansas GTX	550.00
-20	1	Buty Trekkingowe Bernina 2 Comfort	750.00
-21	1	Buty Banks GTX	650.00
-21	1	Buty Tatra II GTX	750.00
-21	3	Buty Ferrata Light Low GTX	480.00
-21	1	Buty Alaska GTX	880.00
-21	1	Buty Trekkingowe Alverstone II GTX	690.00
-22	1	Buty Pinnacle GTX	910.00
-22	3	Buty Dragontail LT GTX	390.00
-22	1	Buty Vetta Tech GTX	610.00
-22	1	Buty Tower 2.0 Extreme GTX	1150.00
-22	1	Buty Trekkingowe T 4 GTX	490.00
-23	7	Bluza TLT Light Thermal	250.00
-23	10	Bielizna Speed Dryarn T-Shirt	120.00
-23	8	Spodnie Transalper Dynastretch	350.00
-23	14	Rękawice Speed/Gore-Tex	180.00
-23	7	Bluza Radical 2 PTC	280.00
-24	10	Bielizna Merino 185 Long Sleeve	250.00
-24	13	Czapka Swisswool Beanie	85.00
-24	7	Bluza Fleece Light Hoody	350.00
-24	18	Sonda Lawinowa 240	140.00
-24	18	Łopata Lawinowa Shovel Pro Light	190.00
-25	16	Karabinek Pure Screw	29.00
-25	16	Lina Boa 9.8mm 60m	600.00
-25	16	Uprząż Orion	210.00
-25	16	Ekspres Bulletproof Quickdraw	75.00
-25	16	Kask Shield II	180.00
-26	16	Lina Evolution Velocity 9.8mm 60m	680.00
-26	16	Lina Fusion Nano IX 9.0mm	790.00
-26	16	Sznur Repshnur 6mm	22.00
-26	16	Lina statyczna WorkPro 11mm	550.00
-26	16	Lina statyczna HTP Static 12.5mm	690.00
-27	16	Karabinek Phantom Wire	55.00
-27	16	Ekspres Alpha Sport Quickdraw	89.00
-27	16	Friend Dragon Cam	210.00
-27	16	Przyrząd asekuracyjny Pivot	130.00
-27	16	Karabinek Aero HMS Screwgate	49.00
-28	16	Zestaw Kości Curved Nut	290.00
-28	16	Chwytotablica Simulator 3D	260.00
-28	16	Friend Ultralight Master Cam	180.00
-28	16	Uprząż Focus	190.00
-28	16	Zestaw Kości Assorted Master Cam	550.00
-29	2	Buty Wspinaczkowe Anasazi VCS	380.00
-29	2	Buty Wspinaczkowe Hiangle	410.00
-29	2	Buty Wspinaczkowe Quantum	460.00
-29	3	Buty Podejściowe Guide Tennie	350.00
-29	2	Buty Wspinaczkowe Rogue VCS	310.00
-30	2	Buty Wspinaczkowe Shaman	430.00
-30	2	Buty Wspinaczkowe Defy	310.00
-30	2	Buty Wspinaczkowe Kronos	350.00
-30	2	Buty Wspinaczkowe Kira	380.00
-30	2	Buty Wspinaczkowe Zenist	450.00
-31	15	Śpiwór Trestles Elite Eco 20	350.00
-31	6	Kurtka Guides Down Hoody	780.00
-31	4	Kurtka Minimalist Jacket	490.00
-31	15	Śpiwór Never Winter 30	410.00
-32	4	Kurtka Calderdale II	130.00
-32	7	Bluza Polarowa Heedful	85.00
-32	8	Spodnie Xert Stretch	150.00
-32	7	Polar Full Zip	70.00
-33	14	Rękawice Waterproof Ski Glove	90.00
-33	5	Kurtka Softshell Achieve	170.00
-33	8	Spodnie Take On Pant	140.00
-33	4	Kurtka Softshell Softshell II	199.00
-34	8	Spodnie NosiLife Cargo	210.00
-34	7	Bluza Core Microfleece	95.00
-34	18	Kapelusz NosiLife Outback Hat	80.00
-34	8	Spodnie Classic Kiwi	180.00
-35	4	Kurtka Trilogy GTX Pro	1600.00
-35	12	Plecak Prolighter 30+10	420.00
-35	6	Kurtka Pierra Ment	550.00
-35	12	Plecak Trilogy 30L	390.00
-36	5	Kurtka Softshell Move	380.00
-36	14	Rękawice Defender	250.00
-36	6	Kurtka Down Jacket	690.00
-36	14	Rękawice Defender Heat	290.00
-37	4	Kurtka Trollveggen Gore-Tex Pro	2200.00
-37	6	Kurtka Falketind Down750	950.00
-37	8	Spodnie Falketind Flex1	510.00
-37	4	Kurtka Lofoten Gore-Tex Pro	2500.00
-38	11	Plecak Wizard 30+4	320.00
-38	15	Śpiwór Sioux 800 Syn	270.00
-38	4	Kurtka Elope 3in1	710.00
-38	15	Śpiwór Hokonui 700 Syn	310.00
-39	10	Bielizna Merino 200 Oasis LS	280.00
-39	7	Bluza Quantum III LS Zip	450.00
-39	18	Skarpetki Hike+ Light Crew	75.00
-39	10	Bielizna Merino 260 Tech LS	310.00
-40	10	Bielizna Merino 250 Crew	290.00
-40	18	Skarpetki PhD Outdoor Light	69.00
-40	10	Bielizna Merino Sport 150	150.00
-40	18	Skarpetki PhD Outdoor Heavy	75.00
-41	18	Skarpetki Trekker Heavyweight	60.00
-41	18	Skarpetki Hike Midweight	65.00
-41	18	Skarpetki Trail Run Speed Demon	55.00
-41	18	Skarpetki WoolFusion Trekker	79.00
-42	18	Chusta Original EcoStretch	49.00
-42	13	Czapka Merino Wool Beanie	80.00
-42	13	Czapka Polar Thermal	55.00
-42	18	Chusta UV Headband	40.00
-43	16	Raki G10 New-Matic	420.00
-43	16	Czekan G Zero	350.00
-43	16	Kask Stealth	290.00
-43	16	Raki G12 New-Classic	490.00
-44	16	Uprząż Sitta	310.00
-44	16	Karabinek Spirit Express	59.00
-44	16	Kask Meteor	280.00
-44	16	Uprząż SAMA	250.00
-45	16	Lina Cobra II 8.6mm 60m	720.00
-45	16	Lina Karma 9.8mm 60m	510.00
-45	16	Przyrząd asekuracyjny Birdie	150.00
-45	16	Lina Booster 9.7mm 60m	600.00
-46	2	Buty Wspinaczkowe Ozone Plus	420.00
-46	16	Crashpad Moonwalk	590.00
-46	16	Ekspres Hawk Combi	65.00
-46	2	Buty Wspinaczkowe Jett QC	350.00
-47	16	Uprząż Versa II	140.00
-47	16	Lina R44 10.5mm 60m	650.00
-47	16	Karabinek Bora Screw	35.00
-47	16	Kask Kapa	160.00
-48	6	Kurtka Puchowa Eskimo	890.00
-48	15	Śpiwór Radical 4Z	1400.00
-48	6	Kamizelka Phantom	590.00
-48	6	Kurtka X-Trem	1300.00
-49	6	Kurtka Puchowa Expert 4	990.00
-49	15	Śpiwór Ultralight III	1200.00
-49	6	Kurtka Climber	710.00
-49	15	Śpiwór Ultralight I	850.00
-50	10	Bielizna Dry LS13000	130.00
-50	10	Bielizna Wool Longsleeve	210.00
-50	13	Czapka Thermic Beanie	45.00
-50	10	Bielizna Fusion LS	180.00
-\.
-
-COPY dostawy (id_producenta, data_dostawy, nr_faktury) FROM stdin;
-1	2024-08-10	FV/2024/08/001
-50	2024-08-15	FV/2024/08/002
-2	2024-08-16	FV/2024/08/003
-49	2024-08-20	FV/2024/08/004
-3	2024-08-22	FV/2024/08/005
-48	2024-08-25	FV/2024/08/006
-4	2024-08-28	FV/2024/08/007
-47	2024-09-01	FV/2024/09/008
-5	2024-09-05	FV/2024/09/009
-46	2024-09-08	FV/2024/09/010
-6	2024-09-10	FV/2024/09/011
-45	2024-09-12	FV/2024/09/012
-7	2024-09-15	FV/2024/09/013
-44	2024-09-18	FV/2024/09/014
-8	2024-09-20	FV/2024/09/015
-43	2024-09-25	FV/2024/09/016
-9	2024-09-28	FV/2024/09/017
-42	2024-10-01	FV/2024/10/018
-10	2024-10-05	FV/2024/10/019
-41	2024-10-08	FV/2024/10/020
-11	2024-10-10	FV/2024/10/021
-40	2024-10-12	FV/2024/10/022
-12	2024-10-15	FV/2024/10/023
-39	2024-10-18	FV/2024/10/024
-13	2024-10-20	FV/2024/10/025
-38	2024-10-23	FV/2024/10/026
-14	2024-10-25	FV/2024/10/027
-37	2024-10-28	FV/2024/10/028
-15	2024-10-30	FV/2024/10/029
-36	2024-11-01	FV/2024/11/030
-\.
-
-COPY zamowienia (id_klienta, data_zamowienia, nr_faktury) FROM stdin;
-23	2024-01-15	FV/001/2024
-44	2024-01-18	FV/009/2024
-12	2024-01-22	FV/014/2024
-38	2024-01-25	FV/019/2024
-5	2024-01-28	FV/023/2024
-29	2024-02-03	FV/027/2024
-44	2024-02-07	FV/030/2024
-16	2024-02-10	FV/033/2024
-31	2024-02-14	FV/036/2024
-8	2024-02-18	FV/039/2024
-42	2024-02-21	FV/041/2024
-19	2024-02-25	FV/043/2024
-35	2024-02-29	FV/045/2024
-15	2024-03-18	FV/010/2024
-27	2024-03-05	FV/047/2024
-11	2024-03-08	FV/049/2024
-48	2024-03-12	FV/051/2024
-3	2024-03-15	FV/052/2024
-39	2024-03-19	FV/053/2024
-14	2024-03-22	FV/054/2024
-41	2024-03-26	FV/055/2024
-25	2024-03-29	FV/056/2024
-7	2024-04-02	FV/057/2024
-41	2024-04-05	FV/058/2024
-18	2024-04-09	FV/059/2024
-33	2024-04-12	FV/060/2024
-9	2024-04-16	FV/061/2024
-46	2024-04-19	FV/062/2024
-21	2024-04-23	FV/063/2024
-36	2024-04-26	FV/064/2024
-2	2024-04-30	FV/065/2024
-43	2024-05-03	FV/066/2024
-17	2024-05-07	FV/067/2024
-30	2024-05-10	FV/068/2024
-6	2024-05-14	FV/069/2024
-11	2024-05-17	FV/070/2024
-22	2024-05-21	FV/071/2024
-37	2024-05-24	FV/072/2024
-13	2024-05-28	FV/073/2024
-28	2024-05-31	FV/074/2024
-4	2024-06-04	FV/075/2024
-45	2024-06-07	FV/076/2024
-20	2024-06-11	FV/077/2024
-34	2024-06-14	FV/078/2024
-10	2024-06-18	FV/079/2024
-1	2024-06-21	FV/080/2024
-40	2024-06-25	FV/081/2024
-32	2024-07-02	FV/083/2024
-26	2024-07-05	FV/084/2024
-23	2024-07-10	FV/085/2024
-42	2024-07-15	FV/086/2024
-12	2024-07-20	FV/087/2024
-38	2024-07-25	FV/088/2024
-5	2024-07-30	FV/089/2024
-29	2024-08-05	FV/090/2024
-44	2024-08-10	FV/091/2024
-16	2024-08-15	FV/092/2024
-31	2024-08-20	FV/093/2024
-23	2024-08-25	FV/094/2024
-32	2024-09-01	FV/095/2024
-12	2024-09-05	FV/096/2024
-38	2024-09-10	FV/097/2024
-5	2024-09-15	FV/098/2024
-23	2024-09-20	FV/099/2024
-42	2024-09-25	FV/100/2024
-12	2024-10-01	FV/101/2024
-38	2024-10-05	FV/102/2024
-5	2024-10-10	FV/103/2024
-23	2024-10-15	FV/104/2024
-46	2024-10-20	FV/105/2024
-12	2024-10-25	FV/106/2024
-38	2024-11-01	FV/107/2024
-5	2024-11-05	FV/108/2024
-23	2024-11-10	FV/109/2024
-43	2024-11-15	FV/110/2024
-12	2024-11-20	FV/111/2024
-38	2024-11-25	FV/112/2024
-5	2024-11-30	FV/113/2024
-23	2024-12-05	FV/114/2024
-8	2024-12-10	FV/115/2024
-12	2024-12-15	FV/116/2024
-38	2024-12-20	FV/117/2024
-5	2024-12-25	FV/118/2024
-23	2024-12-30	FV/119/2024
-4	2025-01-05	FV/120/2025
-\.
-
-COPY magazyn (id_produktu, ilosc) FROM stdin;
-1	45
-2	88
-3	12
-4	30
-5	95
-6	5
-7	62
-8	140
-9	22
-10	77
-11	40
-12	18
-13	85
-14	110
-15	3
-16	50
-17	92
-18	28
-19	66
-20	130
-21	10
-22	70
-23	42
-24	80
-25	15
-26	55
-27	100
-28	35
-29	90
-30	20
-31	60
-32	120
-33	48
-34	72
-35	98
-36	25
-37	82
-38	115
-39	7
-40	58
-41	105
-42	32
-43	78
-44	145
-45	19
-46	68
-47	9
-48	52
-49	125
-50	38
-51	85
-52	21
-53	75
-54	112
-55	4
-56	63
-57	90
-58	29
-59	135
-60	50
-61	88
-62	20
-63	70
-64	100
-65	45
-66	80
-67	12
-68	55
-69	110
-70	30
-71	78
-72	95
-73	22
-74	65
-75	140
-76	5
-77	60
-78	92
-79	28
-80	72
-81	120
-82	38
-83	85
-84	15
-85	50
-86	105
-87	42
-88	70
-89	98
-90	25
-91	62
-92	130
-93	8
-94	55
-95	100
-96	35
-97	80
-98	18
-99	60
-100	115
-101	40
-102	75
-103	90
-104	20
-105	68
-106	10
-107	52
-108	125
-109	30
-110	82
-111	22
-112	70
-113	95
-114	48
-115	88
-116	14
-117	60
-118	105
-119	32
-120	78
-121	150
-122	0
-123	58
-124	92
-125	25
-126	70
-127	100
-128	40
-129	85
-130	12
-131	65
-132	110
-133	30
-134	75
-135	90
-136	20
-137	60
-138	130
-139	45
-140	80
-141	10
-142	55
-143	120
-144	35
-145	72
-146	98
-147	28
-\.
-
-COPY dane_dostawy (id_dostawy, id_produktu, ilosc, cena_zakupu) FROM stdin;
-1	1	50	1550.00
-1	5	100	55.00
-1	10	150	120.00
-2	258	100	130.00
-2	261	80	180.00
-3	11	40	580.00
-3	15	50	380.00
-3	20	30	490.00
-4	254	20	990.00
-4	257	30	850.00
-5	21	20	650.00
-5	22	15	750.00
-5	28	50	290.00
-6	250	10	890.00
-6	253	15	1300.00
-7	29	30	380.00
-7	33	10	90.00
-7	36	40	380.00
-8	246	100	140.00
-8	249	70	160.00
-9	37	50	2200.00
-9	41	30	60.00
-9	44	60	310.00
-10	242	40	420.00
-10	245	30	350.00
-11	45	20	720.00
-11	50	50	130.00
-12	238	25	720.00
-12	241	40	600.00
-13	51	60	1190.00
-13	57	70	890.00
-14	234	40	310.00
-14	237	50	250.00
-15	58	10	350.00
-15	64	20	1950.00
-16	230	30	420.00
-16	233	30	490.00
-17	65	40	710.00
-17	71	50	45.00
-18	226	100	49.00
-18	229	120	40.00
-19	72	30	95.00
-19	78	20	92.00
-20	222	150	60.00
-20	225	140	79.00
-21	79	25	120.00
-21	84	25	15.00
-22	218	150	290.00
-22	221	130	75.00
-23	85	40	410.00
-23	90	60	25.00
-24	214	70	280.00
-24	217	60	310.00
-25	91	10	62.00
-25	96	30	35.00
-26	210	40	320.00
-26	213	35	310.00
-27	97	80	80.00
-27	102	60	55.00
-28	206	5	2200.00
-28	209	5	2500.00
-29	103	30	350.00
-29	108	20	350.00
-30	202	40	380.00
-30	205	30	290.00
-\.
-
-COPY dane_zamowienia (id_zamowienia, id_produktu, ilosc, cena_zakupu) FROM stdin;
-1	1	1	1550.00
-1	5	2	55.00
-2	10	3	120.00
-3	2	1	580.00
-4	15	1	820.00
-5	20	1	490.00
-6	25	2	29.00
-7	30	1	430.00
-8	35	1	1600.00
-9	40	1	290.00
-10	45	1	720.00
-11	3	1	315.00
-12	6	2	710.00
-13	9	1	699.00
-14	12	1	18.00
-15	18	1	580.00
-16	22	1	910.00
-17	28	2	290.00
-18	32	1	130.00
-19	37	1	2200.00
-20	42	5	49.00
-21	48	2	890.00
-22	4	1	470.00
-23	7	3	199.00
-24	11	1	450.00
-25	14	1	310.00
-26	16	1	1200.00
-27	19	1	630.00
-28	23	1	250.00
-29	26	2	680.00
-30	29	1	380.00
-31	33	1	90.00
-32	36	1	380.00
-33	41	1	60.00
-34	44	1	310.00
-35	46	1	420.00
-36	50	1	130.00
-37	1	1	1550.00
-38	8	1	2500.00
-39	13	1	1750.00
-40	17	1	650.00
-41	21	1	650.00
-42	24	2	250.00
-43	27	1	55.00
-44	31	1	350.00
-45	34	1	210.00
-46	38	1	320.00
-47	39	2	280.00
-48	43	1	420.00
-49	47	1	140.00
-50	49	1	990.00
-51	2	1	580.00
-52	5	4	55.00
-53	10	2	120.00
-54	15	1	820.00
-55	20	1	490.00
-56	25	3	29.00
-57	30	1	430.00
-58	35	1	1600.00
-59	40	1	290.00
-60	45	1	720.00
-61	1	1	1550.00
-62	11	1	450.00
-63	22	1	910.00
-64	33	1	90.00
-65	44	2	310.00
-66	6	1	710.00
-67	12	1	18.00
-68	18	1	580.00
-69	24	1	250.00
-70	36	1	380.00
-71	42	3	49.00
-72	48	1	890.00
-73	3	2	315.00
-74	9	1	699.00
-75	14	1	310.00
-76	16	1	1200.00
-77	19	1	630.00
-78	21	1	650.00
-79	26	1	680.00
-80	28	2	290.00
-81	32	1	130.00
-82	37	1	2200.00
-83	41	2	60.00
-84	46	1	420.00
-85	50	1	130.00
-\.
-
-
----Funkcje---
-
-CREATE FUNCTION AnulujZamowienie(p_id_zamowienia INTEGER)
-RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION oblicz_wartosc_dostawy()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_cena_jednostkowa NUMERIC;
 BEGIN
-    DELETE FROM zamowienia
-    WHERE id_zamowienia = p_id_zamowienia;
-    
+    SELECT cena_zakupu INTO v_cena_jednostkowa
+    FROM produkty
+    WHERE id_produktu = NEW.id_produktu;
+    IF v_cena_jednostkowa IS NULL THEN
+        RAISE EXCEPTION 'Nie znaleziono produktu o ID %', NEW.id_produktu;
+    END IF;
+    NEW.cena_dostawy := NEW.ilosc * v_cena_jednostkowa;
+
+    RETURN NEW;
+END;$$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_aktualizuj_wartosc_dostawy
+BEFORE INSERT OR UPDATE ON dane_dostawy
+FOR EACH ROW
+EXECUTE FUNCTION oblicz_wartosc_dostawy();
+
+CREATE OR REPLACE FUNCTION aktualizuj_stan_po_dostawie()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE magazyn
+    SET ilosc_na_stanie = ilosc_na_stanie + NEW.ilosc
+    WHERE id_produktu = NEW.id_produktu;
+
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE TRIGGER trg_dodaj_do_magazynu
+AFTER INSERT ON dane_dostawy
+FOR EACH ROW
+EXECUTE FUNCTION aktualizuj_stan_po_dostawie();
+
+CREATE OR REPLACE FUNCTION aktualizuj_stan_po_zamowieniu()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_roznica_ilosci INTEGER;
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+          v_roznica_ilosci := -NEW.ilosc;
+    ELSIF (TG_OP = 'UPDATE') THEN
+          v_roznica_ilosci := OLD.ilosc - NEW.ilosc;
+    END IF;
+
+    UPDATE magazyn
+    SET ilosc_na_stanie = ilosc_na_stanie + v_roznica_ilosci
+    WHERE id_produktu = NEW.id_produktu;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE TRIGGER trg_odejmij_z_magazynu
+AFTER INSERT OR UPDATE ON dane_zamowienia
+FOR EACH ROW
+EXECUTE FUNCTION aktualizuj_stan_po_zamowieniu();
+
+CREATE OR REPLACE FUNCTION archiwizacja_klienta()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE klienci
+    SET czy_aktywny = FALSE
+    WHERE id_klienta = OLD.id_klienta;
+    RAISE NOTICE 'Nie mozna usuwac klientow. Wartosc czy_aktywny dla klienta o ID % ustawiona na FALSE', OLD.id_klienta;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_archiwizacja_klienta
+BEFORE DELETE ON klienci
+FOR EACH ROW
+EXECUTE FUNCTION archiwizacja_klienta();
+
+CREATE OR REPLACE FUNCTION archiwizacja_producenta()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE producenci
+    SET czy_aktywny = FALSE
+    WHERE id_producenta = OLD.id_producenta;
+    RAISE NOTICE 'Nie mozna usuwac producentow. Wartosc czy_aktywny dla producenta o ID % ustawiona na FALSE', OLD.id_producenta;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_archiwizacja_producenta
+BEFORE DELETE ON producenci
+FOR EACH ROW
+EXECUTE FUNCTION archiwizacja_producenta();
+
+CREATE OR REPLACE FUNCTION sprawdz_dostepnosc_produktu()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_ilosc_na_stanie INTEGER;
+    v_stara_ilosc INTEGER := 0;
+BEGIN
+    SELECT ilosc_na_stanie INTO v_ilosc_na_stanie
+    FROM magazyn
+    WHERE id_produktu = NEW.id_produktu;
+
+    IF v_ilosc_na_stanie IS NULL THEN
+         RAISE EXCEPTION 'Produkt o ID % nie znajduje się w tabeli magazyn', NEW.id_produktu;
+    END IF;
+
+    IF (TG_OP = 'UPDATE') THEN
+        v_stara_ilosc := OLD.ilosc;
+    END IF;
+
+    IF (v_ilosc_na_stanie + v_stara_ilosc) < NEW.ilosc THEN
+        RAISE EXCEPTION 'Brak towaru. Na stanie (wliczając obecną rezerwację) dostępne jest % szt. produktu ID %. Nie można zwiększyć zamówienia do % szt.', 
+                        (v_ilosc_na_stanie + v_stara_ilosc), NEW.id_produktu, NEW.ilosc;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_weryfikacja_stanu
+BEFORE INSERT OR UPDATE ON dane_zamowienia
+FOR EACH ROW
+EXECUTE FUNCTION sprawdz_dostepnosc_produktu();
+
+CREATE OR REPLACE FUNCTION oblicz_wartosc_zamowienia()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_cena_zakupu NUMERIC;
+BEGIN
+    SELECT cena_zakupu INTO v_cena_zakupu
+    FROM produkty
+    WHERE id_produktu = NEW.id_produktu;
+
+    IF v_cena_zakupu IS NULL THEN
+        RAISE EXCEPTION 'Nie znaleziono produktu o ID %', NEW.id_produktu;
+    END IF;
+    
+    NEW.cena_zakupu := ROUND((NEW.ilosc * v_cena_zakupu * 1.1), 2);
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE TRIGGER trg_aktualizuj_wartosc_zamowienia
+BEFORE INSERT OR UPDATE ON dane_zamowienia
+FOR EACH ROW
+EXECUTE FUNCTION oblicz_wartosc_zamowienia();
 
 
 CREATE FUNCTION RejestrujDostawe(
     p_id_producenta INTEGER,
     p_id_produktow INTEGER[],
     p_ilosci INTEGER[],
-    p_ceny_zakupu NUMERIC[]
+    p_ceny_dostawy NUMERIC[]
 )
 RETURNS INTEGER AS $$ DECLARE
     id_nowa_dostawa INTEGER;
@@ -943,157 +319,836 @@ BEGIN
     VALUES (p_id_producenta, CURRENT_DATE)
     RETURNING id_dostawy INTO id_nowa_dostawa;
 
-    INSERT INTO dane_dostawy (id_dostawy, id_produktu, ilosc, cena_zakupu)
+    INSERT INTO dane_dostawy (id_dostawy, id_produktu, ilosc, cena_dostawy)
     SELECT
         id_nowa_dostawa,
         id_produktu,
         ilosc,
         cena
     FROM
-        UNNEST(p_id_produktow, p_ilosci, p_ceny_zakupu) AS t(id_produktu, ilosc, cena);
+        UNNEST(p_id_produktow, p_ilosci, p_ceny_dostawy) AS t(id_produktu, ilosc, cena);
 
     RETURN id_nowa_dostawa;
 END;
 $$ LANGUAGE plpgsql;
 
-
-
-
-CREATE FUNCTION oblicz_cene_zamowienia(p_id_zampwienia INTEGER)
-RETURNS NUMERIC(10, 2) AS $$
+CREATE OR REPLACE FUNCTION bestseller_kategorii(p_nazwa_kategorii VARCHAR)
+RETURNS VARCHAR AS $$
 DECLARE
-    suma_calkowita NUMERIC(10, 2);
+    v_produkt VARCHAR;
 BEGIN
-    SELECT COALESCE(SUM(ilosc * cena_zakupu), 0)
-    INTO suma_calkowita
+    SELECT p.nazwa INTO v_produkt
+    FROM produkty p
+    JOIN kategorie k ON p.id_kategorii = k.id_kategorii
+    JOIN dane_zamowienia dz ON p.id_produktu = dz.id_produktu
+    WHERE k.nazwa = p_nazwa_kategorii
+    GROUP BY p.id_produktu, p.nazwa
+    ORDER BY SUM(dz.ilosc) DESC
+    LIMIT 1;
+    
+    IF v_produkt IS NULL THEN
+        RETURN 'Brak danych sprzedażowych dla kategorii: ' || p_nazwa_kategorii;
+    END IF;
+
+    RETURN v_produkt;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION pobierz_wartosc_zamowienia(p_id_zamowienia INTEGER)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_suma NUMERIC(10,2);
+BEGIN
+    SELECT COALESCE(SUM(cena_zakupu), 0)
+    INTO v_suma
     FROM dane_zamowienia
     WHERE id_zamowienia = p_id_zamowienia;
 
-    RETURN suma_calkowita;
+    RETURN v_suma;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION aktualizuj_cene()
-RETURNS trigger AS $$
-BEGIN
-    IF NEW.cena_zakupu IS DISTINCT FROM OLD.cena_zakupu THEN
-        UPDATE produkty
-        SET cena_zakupu = NEW.cena_zakupu
-        WHERE id_produktu = NEW.id_produktu;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION dodaj_dostawe_do_magazynu()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO magazyn (id_produktu, ilosc)
-    VALUES (NEW.id_produktu, NEW.ilosc)
-    
-    ON CONFLICT (id_produktu) DO UPDATE SET
-        ilosc = magazyn.ilosc + EXCLUDED.ilosc;
-
-    RETURN NEW;
-END;
-
-$$ LANGUAGE plpgsql;
-
-
-CREATE OR REPLACE FUNCTION sprawdz_i_pobierz_z_magazynu()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION pobierz_wartosc_dostawy(p_id_dostawy INTEGER)
+RETURNS NUMERIC AS $$
 DECLARE
-    aktualny_stan INTEGER;
-    ilosc_do_pobrania INTEGER := 0;
+    v_suma NUMERIC(10,2);
 BEGIN
-    IF (TG_OP = 'INSERT') THEN
-        ilosc_do_pobrania := NEW.ilosc;
-        
-    ELSIF (TG_OP = 'UPDATE') THEN
-        IF NEW.ilosc > OLD.ilosc THEN
-            ilosc_do_pobrania := NEW.ilosc - OLD.ilosc;
-        ELSIF NEW.ilosc < OLD.ilosc THEN
-            RETURN NEW;
-        ELSE
-            RETURN NEW;
-        END IF;
-    END IF;
+    SELECT COALESCE(SUM(cena_dostawy), 0)
+    INTO v_suma
+    FROM dane_dostawy
+    WHERE id_dostawy = p_id_dostawy;
 
-    IF ilosc_do_pobrania <= 0 THEN
-        RETURN NEW;
-    END IF;
-
-    SELECT ilosc INTO aktualny_stan
-    FROM magazyn
-    WHERE id_produktu = NEW.id_produktu
-    FOR UPDATE;
-
-    IF aktualny_stan IS NULL OR ilosc_do_pobrania > aktualny_stan THEN
-        RAISE EXCEPTION 'Brak wystarczającej ilości towaru w magazynie (ID: %). Potrzebne: %, Dostępne: %',
-                        NEW.id_produktu, ilosc_do_pobrania, COALESCE(aktualny_stan, 0);
-    ELSE
-        UPDATE magazyn
-        SET ilosc = magazyn.ilosc - ilosc_do_pobrania
-        WHERE id_produktu = NEW.id_produktu;
-       
-        RETURN NEW;
-    END IF;
+    RETURN v_suma;
 END;
 $$ LANGUAGE plpgsql;
 
----Triggery---
+CREATE OR REPLACE PROCEDURE powtorz_zamowienie(p_stare_id_zamowienia INTEGER, p_nowy_nr_faktury VARCHAR)
+AS $$
+DECLARE
+    v_nowe_id_zamowienia INTEGER;
+    v_id_klienta INTEGER;
+BEGIN
+    SELECT id_klienta INTO v_id_klienta
+    FROM zamowienia
+    WHERE id_zamowienia = p_stare_id_zamowienia;
 
-CREATE TRIGGER trg_po_zmianie_ceny_dostawy
-AFTER INSERT OR UPDATE OF cena_zakupu ON dane_dostawy
-FOR EACH ROW
-EXECUTE FUNCTION aktualizuj_cene();
+    IF v_id_klienta IS NULL THEN
+        RAISE NOTICE 'Zamówienie źródłowe o ID % nie istnieje.', p_stare_id_zamowienia;
+        RETURN;
+    END IF;
 
-CREATE TRIGGER trg_po_dodaniu_dostawy
-AFTER INSERT ON dane_dostawy
-FOR EACH ROW
-EXECUTE FUNCTION dodaj_dostawe_do_magazynu();
+    INSERT INTO zamowienia (id_klienta, data_zamowienia, nr_faktury)
+    VALUES (v_id_klienta, CURRENT_DATE, p_nowy_nr_faktury)
+    RETURNING id_zamowienia INTO v_nowe_id_zamowienia;
 
-CREATE TRIGGER trg_sprawdz_magazyn_przed_zamowieniem
-BEFORE INSERT OR UPDATE ON dane_zamowienia
-FOR EACH ROW
-EXECUTE FUNCTION sprawdz_i_pobierz_z_magazynu();
+    INSERT INTO dane_zamowienia (id_zamowienia, id_produktu, ilosc, cena_zakupu)
+    SELECT v_nowe_id_zamowienia, id_produktu, ilosc, 0
+    FROM dane_zamowienia
+    WHERE id_zamowienia = p_stare_id_zamowienia;
+
+    RAISE NOTICE 'Utworzono nowe zamówienie nr % na podstawie zamówienia nr %.', v_nowe_id_zamowienia, p_stare_id_zamowienia;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION bilans_miesieczny(p_rok INTEGER, p_miesiac INTEGER)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_przychody NUMERIC(10,2) := 0;
+    v_wydatki NUMERIC(10,2) := 0;
+BEGIN
+    SELECT COALESCE(SUM(dz.cena_zakupu), 0)
+    INTO v_przychody
+    FROM zamowienia z
+    JOIN dane_zamowienia dz ON z.id_zamowienia = dz.id_zamowienia
+    WHERE EXTRACT(YEAR FROM z.data_zamowienia) = p_rok
+      AND EXTRACT(MONTH FROM z.data_zamowienia) = p_miesiac;
+
+    SELECT COALESCE(SUM(dd.cena_dostawy), 0)
+    INTO v_wydatki
+    FROM dostawy d
+    JOIN dane_dostawy dd ON d.id_dostawy = dd.id_dostawy
+    WHERE EXTRACT(YEAR FROM d.data_dostawy) = p_rok
+      AND EXTRACT(MONTH FROM d.data_dostawy) = p_miesiac;
+
+    RETURN v_przychody - v_wydatki;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE PROCEDURE anuluj_zamowienie(p_id_zamowienia INTEGER)
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM zamowienia WHERE id_zamowienia = p_id_zamowienia) THEN
+        RAISE NOTICE 'Zamówienie o ID % nie istnieje.', p_id_zamowienia;
+        RETURN;
+    END IF;
+
+    UPDATE magazyn m
+    SET ilosc_na_stanie = m.ilosc_na_stanie + dz.ilosc
+    FROM dane_zamowienia dz
+    WHERE m.id_produktu = dz.id_produktu
+      AND dz.id_zamowienia = p_id_zamowienia;
+
+    DELETE FROM zamowienia 
+    WHERE id_zamowienia = p_id_zamowienia;
+
+    RAISE NOTICE 'Zamówienie nr % zostało pomyślnie anulowane. Towary wróciły na stan.', p_id_zamowienia;
+END;
+$$ LANGUAGE plpgsql;
+
+INSERT INTO klienci (nazwa_firmy, nip, adres, telefon, email) VALUES
+('Sklep 8A.pl', '999-001-00-11', 'ul. Górska 1, 43-300 Bielsko-Biała', '+48 33 555 1111', 'kontakt@8a.pl'),
+('Centrum Turystyki PL', '999-002-00-22', 'Al. Niepodległości 10, 02-001 Warszawa', '+48 22 555 2222', 'info@cturystyki.pl'),
+('Himal Sklep Tatry', '999-003-00-33', 'ul. Tatrzańska 25, 34-500 Zakopane', '+48 18 555 3333', 'sklep@himal.pl'),
+('Outdoor Expert Kraków', '999-004-00-44', 'ul. Szlak 12, 31-151 Kraków', '+48 12 555 4444', 'sales@outdoorexpert.pl'),
+('Górski Świat Trójmiasto', '999-005-00-55', 'ul. Morska 7, 80-803 Gdańsk', '+48 58 555 5555', 'gswiat@gorski.pl'),
+('e-Alpinista Online', '999-006-00-66', 'ul. Główna 30, 60-001 Poznań', '+48 61 555 6666', 'biuro@ealpinista.pl'),
+('Wysokie Progi Wrocław', '999-007-00-77', 'ul. Złota 45, 50-001 Wrocław', '+48 71 555 7777', 'sklep@wysokieprogi.pl'),
+('Skala Wspinaczkowa Łódź', '999-008-00-88', 'ul. Leśna 10, 90-001 Łódź', '+48 42 555 8888', 'kontakt@skala.pl'),
+('Szturm Sklep Militarny', '999-009-00-99', 'ul. Długa 8, 70-001 Szczecin', '+48 91 555 9999', 'info@szturm.pl'),
+('Podróżnik Bydgoszcz', '999-010-00-00', 'ul. Różana 1, 85-001 Bydgoszcz', '+48 52 555 0000', 'podroznik@sklep.pl'),
+('Szarpnij się PL', '999-011-00-11', 'ul. Widokowa 15, 30-001 Kraków', '+48 12 666 1111', 'kontakt@szarpnijsiesklep.pl'),
+('Trekking Point Warszawa', '999-012-00-22', 'ul. Jasna 2, 00-001 Warszawa', '+48 22 666 2222', 'trekpoint@sklep.pl'),
+('Sklep Gory Lodzi', '999-013-00-33', 'ul. Piotrkowska 5, 90-001 Łódź', '+48 42 666 3333', 'gory@lodzi.pl'),
+('Outdoor Silesia', '999-014-00-44', 'ul. Katowicka 12, 40-001 Katowice', '+48 32 666 4444', 'silesia@outdoor.pl'),
+('Wyprawa Sklep', '999-015-00-55', 'ul. Rynek 1, 61-001 Poznań', '+48 61 666 5555', 'wyprawa@sklep.pl'),
+('Klimat Outdoor', '999-016-00-66', 'ul. Dworcowa 3, 80-001 Gdynia', '+48 58 666 6666', 'klimat@outdoor.pl'),
+('Sklep Pod Chmurką', '999-017-00-77', 'ul. Polna 18, 51-001 Wrocław', '+48 71 666 7777', 'podchmurka@sklep.pl'),
+('Sportowe Wyzwania', '999-018-00-88', 'ul. Sportowa 1, 20-001 Lublin', '+48 81 666 8888', 'wyzwania@sport.pl'),
+('Górskie Ekwipunki', '999-019-00-99', 'ul. Graniczna 5, 43-300 Bielsko-Biała', '+48 33 666 9999', 'ekwpunki@gorskie.pl'),
+('Hike & Trek', '999-020-00-00', 'ul. Wczasowa 10, 81-001 Sopot', '+48 58 777 0000', 'hike@trek.pl'),
+('Świat Alpinisty', '999-021-00-11', 'ul. Wspinaczkowa 3, 30-001 Kraków', '+48 12 777 1111', 'alpinista@swiat.pl'),
+('Namioty i Plecaki', '999-022-00-22', 'ul. Biwakowa 1, 02-001 Warszawa', '+48 22 777 2222', 'namioty@plecaki.pl'),
+('Sklep Wędrowiec', '999-023-00-33', 'ul. Pielgrzymkowa 8, 34-500 Zakopane', '+48 18 777 3333', 'wedrowiec@sklep.pl'),
+('Technika Górska', '999-024-00-44', 'ul. Techniczna 4, 31-151 Kraków', '+48 12 777 4444', 'technika@gorska.pl'),
+('Obóz i Trekking', '999-025-00-55', 'ul. Harcerska 2, 80-803 Gdańsk', '+48 58 777 5555', 'oboz@trekking.pl'),
+('Sklep Biegowy Terenowy', '999-026-00-66', 'ul. Maratonowa 1, 60-001 Poznań', '+48 61 777 6666', 'biegowy@terenowy.pl'),
+('Kanon Outdoor', '999-027-00-77', 'ul. Wąska 10, 50-001 Wrocław', '+48 71 777 7777', 'kanon@outdoor.pl'),
+('Sprzęt Dla Zdobywców', '999-028-00-88', 'ul. Triumfu 5, 90-001 Łódź', '+48 42 777 8888', 'zdobywcy@sklep.pl'),
+('Survival Store PL', '999-029-00-99', 'ul. Dzika 3, 70-001 Szczecin', '+48 91 777 9999', 'survival@store.pl'),
+('Eko Wyprawy', '999-030-00-00', 'ul. Zielona 1, 85-001 Bydgoszcz', '+48 52 777 0000', 'eko@wyprawy.pl'),
+('Adventure Gear Polska', '999-031-00-11', 'ul. Przygody 11, 30-001 Kraków', '+48 12 888 1111', 'gear@adventure.pl'),
+('Miasto i Góry', '999-032-00-22', 'ul. Metropolitalna 2, 00-001 Warszawa', '+48 22 888 2222', 'miasto@gory.pl'),
+('Pasja Trekking', '999-033-00-33', 'ul. Serdeczna 7, 34-500 Zakopane', '+48 18 888 3333', 'pasja@trekking.pl'),
+('Sklep Grot', '999-034-00-44', 'ul. Skałkowa 1, 31-151 Kraków', '+48 12 888 4444', 'grot@sklep.pl'),
+('Bałtycki Outdoor', '999-035-00-55', 'ul. Plażowa 9, 80-803 Gdańsk', '+48 58 888 5555', 'baltycki@outdoor.pl'),
+('Centralny Sklep Sportowy', '999-036-00-66', 'ul. Olimpijska 1, 60-001 Poznań', '+48 61 888 6666', 'css@sklep.pl'),
+('Dla Podróżników', '999-037-00-77', 'ul. Kolejowa 3, 50-001 Wrocław', '+48 71 888 7777', 'dla@podroznikow.pl'),
+('Wypożyczalnia Sprzętu Górskiego', '999-038-00-88', 'ul. Sprzętowa 1, 90-001 Łódź', '+48 42 888 8888', 'wypozyczalnia@gorska.pl'),
+('Sklep Ekstremalny', '999-039-00-99', 'ul. Adrenaliny 5, 70-001 Szczecin', '+48 91 888 9999', 'ekstremalny@sklep.pl'),
+('Turystyka i Natura', '999-040-00-00', 'ul. Parkowa 1, 85-001 Bydgoszcz', '+48 52 888 0000', 'turystyka@natura.pl'),
+('Zdobywaj Szczyty', '999-041-00-11', 'ul. Szczytowa 1, 30-001 Kraków', '+48 12 999 1111', 'szczyty@zdobywaj.pl'),
+('Świat Przygody', '999-042-00-22', 'ul. Odkrywców 2, 02-001 Warszawa', '+48 22 999 2222', 'przygoda@swiat.pl'),
+('Sklep Plecak', '999-043-00-33', 'ul. Torba 3, 34-500 Zakopane', '+48 18 999 3333', 'plecak@sklep.pl'),
+('Odzież Techniczna PL', '999-044-00-44', 'ul. Włókiennicza 4, 31-151 Kraków', '+48 12 999 4444', 'odziez@techniczna.pl'),
+('Sklep Morze Gór', '999-045-00-55', 'ul. Horyzont 5, 80-803 Gdańsk', '+48 58 999 5555', 'morze@gor.pl'),
+('Akcesoria Outdoor', '999-046-00-66', 'ul. Detaliczna 6, 60-001 Poznań', '+48 61 999 6666', 'akcesoria@outdoor.pl'),
+('Survival & Bushcraft', '999-047-00-77', 'ul. Leśny Zaułek 7, 50-001 Wrocław', '+48 71 999 7777', 'bushcraft@survival.pl'),
+('Sprzęt Wyprawowy PL', '999-048-00-88', 'ul. Ekspedycyjna 8, 90-001 Łódź', '+48 42 999 8888', 'wyprawowy@sprzet.pl');
+
+INSERT INTO producenci (nazwa_firmy, nip, adres, telefon, email) VALUES
+('The North Face', '876-001-00-10', 'Warszawa, Polska', '+48 22 555 1010', 'contact@tnf.pl'), 
+('Scarpa', '921-002-00-20', 'Asolo, Włochy', '+39 0423 231 00', 'info@scarpa.it'), 
+('Mammut', '432-003-00-30', 'Monachium, Niemcy', '+49 89 555 1515', 'service@mammut.de'), 
+('La Sportiva', '111-004-00-40', 'Ziano di Fiemme, Włochy', '+39 0462 570 415', 'support@lasportiva.com'), 
+('Black Diamond', '777-005-00-50', 'Lyon, Francja', '+33 4 78 555 553', 'sales@blackdiamond.fr'), 
+('Patagonia', '654-006-00-60', 'Kraków, Polska', '+48 12 555 8616', 'help@patagonia.pl'), 
+('Milo', '500-007-00-70', 'Dąbrowa Górnicza, Polska', '+48 32 763 3300', 'biuro@milo.pl'), 
+('Arcteryx', '300-008-00-80', 'Berlin, Niemcy', '+49 30 555 3500', 'customer@arcteryx.de'), 
+('Salomon', '200-009-00-90', 'Annecy, Francja', '+33 4 50 64 30 30', 'contact@salomon.com'), 
+('Osprey', '100-010-00-00', 'Rzym, Włochy', '+39 06 555 5900', 'info@osprey.it'), 
+('Deuter', '101-011-00-11', 'Gersthofen, Niemcy', '+49 821 4984 0', 'service@deuter.com'), 
+('Petzl', '102-012-00-22', 'Crolles, Francja', '+33 4 76 92 09 00', 'contact@petzl.com'), 
+('Mountain Hardwear', '103-013-00-33', 'Paryż, Francja', '+33 1 555 5238', 'support@mhw.fr'), 
+('Columbia', '104-014-00-44', 'Praga, Czechy', '+420 2 555 6953', 'contact@columbia.cz'), 
+('Rab', '105-015-00-55', 'Gdańsk, Polska', '+48 58 555 5200', 'info@rab.pl'), 
+('Montane', '106-016-00-66', 'Wrocław, Polska', '+48 71 555 2300', 'sales@montane.pl'), 
+('Haglofs', '107-017-00-77', 'Hamburg, Niemcy', '+49 40 555 3000', 'support@haglofs.de'), 
+('Fjallraven', '108-018-00-88', 'Frankfurt, Niemcy', '+49 69 555 4400', 'info@fjallraven.de'), 
+('Lowa', '109-019-00-99', 'Jetzendorf, Niemcy', '+49 8137 999 0', 'service@lowa.de'), 
+('Meindl', '110-020-00-00', 'Kirchanschöring, Niemcy', '+49 8685 700', 'info@meindl.de'), 
+('Hanwag', '111-021-00-11', 'Vierkirchen, Niemcy', '+49 8139 99000', 'support@hanwag.de'), 
+('Garmont', '112-022-00-22', 'Vedelago, Włochy', '+39 0423 400 900', 'info@garmont.it'), 
+('Dynafit', '113-023-00-33', 'Monaco, Niemcy', '+49 89 57005 0', 'contact@dynafit.com'), 
+('Ortovox', '114-024-00-44', 'Taufkirchen, Niemcy', '+49 89 642 970', 'service@ortovox.com'), 
+('Edelrid', '115-025-00-55', 'Isny, Niemcy', '+49 7562 981 0', 'info@edelrid.de'), 
+('Sterling Rope', '116-026-00-66', 'Brescia, Włochy', '+39 030 555 2555', 'sales@sterlingrope.it'), 
+('DMM', '117-027-00-77', 'Marsylia, Francja', '+33 4 91 555 000', 'info@dmmwales.fr'), 
+('Metolius', '118-028-00-88', 'Florencja, Włochy', '+39 055 555 7585', 'contact@metoliusclimbing.it'), 
+('Five Ten', '119-029-00-99', 'Brno, Czechy', '+420 5 555 9337', 'support@fiveten.cz'), 
+('Evolv', '120-030-00-00', 'Ostrawa, Czechy', '+420 6 555 7671', 'info@evolvclimbing.cz'), 
+('Marmot', '121-031-00-11', 'Kilonia, Niemcy', '+49 431 555 0400', 'contact@marmot.de'), 
+('Regatta', '122-032-00-22', 'Łódź, Polska', '+48 42 555 1200', 'sales@regatta.pl'), 
+('Dare2b', '123-033-00-33', 'Poznań, Polska', '+48 61 555 1300', 'info@dare2b.pl'), 
+('Craghoppers', '124-034-00-44', 'Katowice, Polska', '+48 32 555 1100', 'support@craghoppers.pl'), 
+('Millet', '125-035-00-55', 'Annecy, Francja', '+33 4 50 64 33 33', 'contact@millet.fr'), 
+('Eider', '126-036-00-66', 'Annecy, Francja', '+33 4 50 64 34 34', 'info@eider.com'), 
+('Norrona', '127-037-00-77', 'Nicea, Francja', '+33 4 93 555 000', 'support@norrona.fr'), 
+('Vaude', '128-038-00-88', 'Tettnang, Niemcy', '+49 7542 5306 0', 'service@vaude.com'), 
+('Icebreaker', '129-039-00-99', 'Turyn, Włochy', '+39 011 555 1622', 'contact@icebreaker.it'), 
+('Smartwool', '130-040-00-00', 'Neapol, Włochy', '+39 081 555 6653', 'info@smartwool.it'), 
+('Bridgedale', '131-041-00-11', 'Szczecin, Polska', '+48 91 555 3050', 'sales@bridgedale.pl'), 
+('Buff', '132-042-00-22', 'Madryt, Hiszpania', '+34 93 807 00 22', 'contact@buff.com'), 
+('Grivel', '133-043-00-33', 'Courmayeur, Włochy', '+39 0165 899 225', 'info@grivel.com'), 
+('Petzl Sport', '134-044-00-44', 'Crolles, Francja', '+33 4 76 92 09 00', 'sport@petzl.com'), 
+('Beal', '135-045-00-55', 'Vienne, Francja', '+33 4 74 31 03 89', 'contact@beal.fr'), 
+('Ocun', '136-046-00-66', 'Jičín, Czechy', '+420 493 539 001', 'info@ocun.com'), 
+('Singing Rock', '137-047-00-77', 'Ponikla, Czechy', '+420 481 539 515', 'sales@singingrock.com'), 
+('Pajak', '138-048-00-88', 'Bielsko-Biała, Polska', '+48 33 811 0905', 'biuro@pajaksport.pl'), 
+('Małachowski', '139-049-00-99', 'Dzierżoniów, Polska', '+48 74 831 3456', 'info@malachowski.pl'), 
+('Brubeck', '140-050-00-00', 'Zduńska Wola, Polska', '+48 43 824 4500', 'kontakt@brubeck.pl'); 
 
 
----Widoki---
 
-CREATE VIEW AktualnyStanMagazynu AS
+INSERT INTO kategorie (id_kategorii, nazwa) VALUES (0, 'nieznane');
+INSERT INTO kategorie (nazwa) VALUES
+('Buty Trekkingowe Wysokie'),
+('Buty Wspinaczkowe'),
+('Buty Podejściowe'),
+('Kurtka Hardshell'),
+('Kurtka Softshell'),
+('Kurtka Puchowa'),
+('Bluza Polarowa'),
+('Spodnie Trekkingowe'),
+('Spodnie Wspinaczkowe'),
+('Bielizna Termoaktywna'),
+('Plecak Turystyczny'),
+('Plecak Wspinaczkowy'),
+('Czapka Zimowa'),
+('Rękawice Narciarskie'),
+('Śpiwór Puchowy'),
+('Karabinek Wspinaczkowy'),
+('Czołówka'),
+('Akcesoria');
+
+INSERT INTO produkty (id_kategorii, nazwa, cena_zakupu) VALUES
+(6, 'Kurtka Puchowa Himalayan Down Parka', 1550.00),
+(4, 'Kurtka Hardshell Summit Series L5 GTX', 1190.00),
+(11, 'Plecak Banchee 65L', 380.00),
+(7, 'Bluza Polarowa 100 Glacier Full Zip', 110.00),
+(13, 'Czapka Salty Dog Beanie', 55.00),
+(8, 'Spodnie Trekkingowe Exploration Convert', 210.00),
+(10, 'Bielizna Termoaktywna Warm Poly LS', 120.00),
+(4, 'Kurtka Quest Zip In Jacket', 350.00),
+(6, 'Kurtka Puchowa Summit L3 Ventrix', 950.00),
+(13, 'Czapka Recycled Ridge Fleece', 45.00),
+(1, 'Buty Trekkingowe Kailash Trek GTX', 580.00),
+(3, 'Buty Podejściowe Mojito Basic', 315.00),
+(2, 'Buty Wspinaczkowe Vapor V', 400.00),
+(1, 'Buty Wysokogórskie Phantom Tech', 1850.00),
+(3, 'Buty Podejściowe Mescalito', 380.00),
+(2, 'Buty Wspinaczkowe Instinct VS', 450.00),
+(1, 'Buty Trekkingowe R-Evolution GTX', 690.00),
+(2, 'Buty Wspinaczkowe Booster S', 490.00),
+(3, 'Buty Podejściowe Crux', 290.00),
+(2, 'Buty Wspinaczkowe Chimera', 490.00),
+(6, 'Kurtka Puchowa Broad Peak IN Hooded', 890.00),
+(4, 'Kurtka Hardshell Nordwand Pro HS', 1500.00),
+(12, 'Plecak Wspinaczkowy Trion Guide 45+7', 520.00),
+(10, 'Bielizna Aconcagua ML', 190.00),
+(16, 'Zestaw Ekspresów Contact 12cm', 250.00),
+(17, 'Czołówka T-Trail', 120.00),
+(11, 'Plecak Ducan 30', 360.00),
+(7, 'Bluza Polarowa Innominata ML Jacket', 220.00),
+(2, 'Buty Wspinaczkowe Solution Comp', 470.00),
+(1, 'Buty Trekkingowe Trango Tower GTX', 890.00),
+(3, 'Buty Podejściowe TX4', 390.00),
+(2, 'Buty Wspinaczkowe Katana Laces', 450.00),
+(1, 'Buty Trekkingowe Nepal Cube GTX', 1950.00),
+(2, 'Buty Wspinaczkowe Skwama', 420.00),
+(3, 'Buty Podejściowe Boulder X', 350.00),
+(2, 'Buty Wspinaczkowe Cobra', 390.00),
+(17, 'Czołówka Icon 700', 195.00),
+(16, 'Karabinek HotForge Screwgate', 39.00),
+(12, 'Plecak Stone 42 Duffel', 350.00),
+(18, 'Kije Trekkingowe Trail Pro Shock', 310.00),
+(16, 'Friend Camalot C4 1.0', 180.00),
+(16, 'Uprząż Momentum', 160.00),
+(16, 'Ekspres LiteWire Quickdraw', 45.00),
+(16, 'Friend Camalot X4 0.5', 190.00),
+(6, 'Kurtka Down Sweater', 710.00),
+(5, 'Kurtka R2 TechFace Hoody', 550.00),
+(7, 'Bluza Better Sweater 1/4 Zip', 310.00),
+(10, 'Bielizna Capilene Midweight Crew', 140.00),
+(18, 'Spodenki Baggies Shorts 5in', 120.00),
+(7, 'Bluza Nano Air Light Hybrid', 410.00),
+(6, 'Kamizelka Down Sweater Vest', 490.00),
+(8, 'Spodnie Trekkingowe Brenta', 199.00),
+(9, 'Spodnie Wspinaczkowe Senso', 155.00),
+(7, 'Polar Nesun', 130.00),
+(11, 'Plecak Ghost 35', 250.00),
+(13, 'Czapka Milo Logo', 45.00),
+(9, 'Spodnie Wspinaczkowe Free Rock', 145.00),
+(8, 'Spodnie Trekkingowe Durano', 160.00),
+(4, 'Kurtka Hardshell Alpha SV Jacket', 2500.00),
+(5, 'Kurtka Softshell Gamma LT Hoody', 780.00),
+(6, 'Kurtka Puchowa Cerium LT Hoody', 1200.00),
+(12, 'Plecak Konseal 15', 290.00),
+(10, 'Bielizna Phase AR Crew LS', 220.00),
+(4, 'Kurtka Beta LT Jacket', 1850.00),
+(5, 'Kurtka Gamma MX Hoody', 990.00),
+(1, 'Buty Trekkingowe Quest 4 GTX', 699.00),
+(14, 'Rękawice Force GORE-TEX', 199.00),
+(8, 'Spodnie Wayfarer Tapered', 310.00),
+(18, 'Kamizelka do biegania S/LAB Sense 5', 450.00),
+(10, 'Bielizna Termoaktywna Active LS', 100.00),
+(1, 'Buty X Ultra 4 GTX', 480.00),
+(1, 'Buty X Ultra Pioneer Mid CS WP', 420.00),
+(11, 'Plecak Turystyczny Talon 44', 390.00),
+(11, 'Plecak Turystyczny Atmos AG 65', 710.00),
+(12, 'Plecak Wspinaczkowy Mutant 38', 380.00),
+(11, 'Plecak Fairview 55 (damski)', 490.00),
+(11, 'Plecak Daylite Plus', 170.00),
+(11, 'Plecak Exos 48', 550.00),
+(12, 'Plecak Mutant 52', 490.00),
+(11, 'Plecak Futura Pro 40', 450.00),
+(11, 'Plecak Aircontact Lite 50+10', 600.00),
+(12, 'Plecak Guide 30+', 380.00),
+(15, 'Śpiwór Exosphere -4°', 510.00),
+(13, 'Czapka Lavaredo Beanie', 65.00),
+(11, 'Plecak Guide 45+', 510.00),
+(17, 'Czołówka Swift RL', 250.00),
+(16, 'Lina statyczna Club 10.0mm 60m', 690.00),
+(16, 'Przyrząd asekuracyjny GRIGRI', 230.00),
+(17, 'Latarka ręczna TACTIKKA', 130.00),
+(16, 'Kask BOREO', 210.00),
+(17, 'Czołówka ACTIK CORE', 170.00),
+(6, 'Kurtka Ghost Whisperer UL Hoody', 1750.00),
+(5, 'Kurtka Kor AirShell', 310.00),
+(15, 'Śpiwór Lamina Z Spark', 280.00),
+(7, 'Bluza Microchill 2.0 Zip', 95.00),
+(4, 'Kurtka Exposure/2 GTX Paclite', 890.00),
+(5, 'Kurtka Softshell KOR Preshell', 260.00),
+(4, 'Kurtka Watertight II', 170.00),
+(7, 'Polar Fast Trek II Full Zip', 100.00),
+(8, 'Spodnie Silver Ridge Convertible', 165.00),
+(1, 'Buty Newton Ridge Plus II', 310.00),
+(10, 'Bielizna Midweight Stretch', 90.00),
+(8, 'Spodnie Trekkingowe Cascade Peak', 190.00),
+(6, 'Kurtka Microlight Alpine', 820.00),
+(15, 'Śpiwór Ascent 900', 1150.00),
+(4, 'Kurtka Kinetic Alpine 2.0', 950.00),
+(10, 'Bielizna MeCo 165 Zip Tee', 160.00),
+(15, 'Czapka Ridge Beanie', 65.00),
+(6, 'Kamizelka Microlight Vest', 650.00),
+(4, 'Kurtka Alpine Resolve Jacket', 1200.00),
+(6, 'Kurtka Featherlite Down', 650.00),
+(11, 'Plecak Trailblazer 30', 330.00),
+(5, 'Kurtka Softshell Dyno Stretch', 380.00),
+(5, 'Kurtka Softshell Icarus', 350.00),
+(4, 'Kurtka L.I.M Proof Multi Jacket', 650.00),
+(8, 'Spodnie Rugged Flex Pant', 410.00),
+(11, 'Plecak Torsang', 350.00),
+(6, 'Kurtka Essens Mimic Hood', 620.00),
+(7, 'Bluza Astro Fleece Jacket', 190.00),
+(8, 'Spodnie Keb Trousers', 580.00),
+(11, 'Plecak Kanken', 250.00),
+(5, 'Kurtka Abisko Lite Trekking', 690.00),
+(13, 'Czapka Övik Pom Hat', 95.00),
+(8, 'Spodnie Vidda Pro Trousers', 490.00),
+(1, 'Buty Renegade GTX Mid', 630.00),
+(1, 'Buty Zephyr GTX Mid TF', 490.00),
+(3, 'Buty Approach Pro GTX', 450.00),
+(1, 'Buty Tibet GTX', 890.00),
+(1, 'Buty Trekkingowe Camino EVO GTX', 790.00),
+(1, 'Buty Island MFS Active', 810.00),
+(1, 'Buty Borneo MFS', 690.00),
+(1, 'Buty Vakuum GTX', 620.00),
+(1, 'Buty Kansas GTX', 550.00),
+(1, 'Buty Trekkingowe Bernina 2 Comfort', 750.00),
+(1, 'Buty Banks GTX', 650.00),
+(1, 'Buty Tatra II GTX', 750.00),
+(3, 'Buty Ferrata Light Low GTX', 480.00),
+(1, 'Buty Alaska GTX', 880.00),
+(1, 'Buty Trekkingowe Alverstone II GTX', 690.00),
+(1, 'Buty Pinnacle GTX', 910.00),
+(3, 'Buty Dragontail LT GTX', 390.00),
+(1, 'Buty Vetta Tech GTX', 610.00),
+(1, 'Buty Tower 2.0 Extreme GTX', 1150.00),
+(1, 'Buty Trekkingowe T 4 GTX', 490.00),
+(7, 'Bluza TLT Light Thermal', 250.00),
+(10, 'Bielizna Speed Dryarn T-Shirt', 120.00),
+(8, 'Spodnie Transalper Dynastretch', 350.00),
+(14, 'Rękawice Speed/Gore-Tex', 180.00),
+(7, 'Bluza Radical 2 PTC', 280.00),
+(10, 'Bielizna Merino 185 Long Sleeve', 250.00),
+(13, 'Czapka Swisswool Beanie', 85.00),
+(7, 'Bluza Fleece Light Hoody', 350.00),
+(18, 'Sonda Lawinowa 240', 140.00),
+(18, 'Łopata Lawinowa Shovel Pro Light', 190.00),
+(16, 'Karabinek Pure Screw', 29.00),
+(16, 'Lina Boa 9.8mm 60m', 600.00),
+(16, 'Uprząż Orion', 210.00),
+(16, 'Ekspres Bulletproof Quickdraw', 75.00),
+(16, 'Kask Shield II', 180.00),
+(16, 'Lina Evolution Velocity 9.8mm 60m', 680.00),
+(16, 'Lina Fusion Nano IX 9.0mm', 790.00),
+(16, 'Sznur Repshnur 6mm', 22.00),
+(16, 'Lina statyczna WorkPro 11mm', 550.00),
+(16, 'Lina statyczna HTP Static 12.5mm', 690.00),
+(16, 'Karabinek Phantom Wire', 55.00),
+(16, 'Ekspres Alpha Sport Quickdraw', 89.00),
+(16, 'Friend Dragon Cam', 210.00),
+(16, 'Przyrząd asekuracyjny Pivot', 130.00),
+(16, 'Karabinek Aero HMS Screwgate', 49.00),
+(16, 'Zestaw Kości Curved Nut', 290.00),
+(16, 'Chwytotablica Simulator 3D', 260.00),
+(16, 'Friend Ultralight Master Cam', 180.00),
+(16, 'Uprząż Focus', 190.00),
+(16, 'Zestaw Kości Assorted Master Cam', 550.00),
+(2, 'Buty Wspinaczkowe Anasazi VCS', 380.00),
+(2, 'Buty Wspinaczkowe Hiangle', 410.00),
+(2, 'Buty Wspinaczkowe Quantum', 460.00),
+(3, 'Buty Podejściowe Guide Tennie', 350.00),
+(2, 'Buty Wspinaczkowe Rogue VCS', 310.00),
+(2, 'Buty Wspinaczkowe Shaman', 430.00),
+(2, 'Buty Wspinaczkowe Defy', 310.00),
+(2, 'Buty Wspinaczkowe Kronos', 350.00),
+(2, 'Buty Wspinaczkowe Kira', 380.00),
+(2, 'Buty Wspinaczkowe Zenist', 450.00),
+(15, 'Śpiwór Trestles Elite Eco 20', 350.00),
+(6, 'Kurtka Guides Down Hoody', 780.00),
+(4, 'Kurtka Minimalist Jacket', 490.00),
+(15, 'Śpiwór Never Winter 30', 410.00),
+(4, 'Kurtka Calderdale II', 130.00),
+(7, 'Bluza Polarowa Heedful', 85.00),
+(8, 'Spodnie Xert Stretch', 150.00),
+(7, 'Polar Full Zip', 70.00),
+(14, 'Rękawice Waterproof Ski Glove', 90.00),
+(5, 'Kurtka Softshell Achieve', 170.00),
+(8, 'Spodnie Take On Pant', 140.00),
+(4, 'Kurtka Softshell Softshell II', 199.00),
+(8, 'Spodnie NosiLife Cargo', 210.00),
+(7, 'Bluza Core Microfleece', 95.00),
+(18, 'Kapelusz NosiLife Outback Hat', 80.00),
+(8, 'Spodnie Classic Kiwi', 180.00),
+(4, 'Kurtka Trilogy GTX Pro', 1600.00),
+(12, 'Plecak Prolighter 30+10', 420.00),
+(6, 'Kurtka Pierra Ment', 550.00),
+(12, 'Plecak Trilogy 30L', 390.00),
+(5, 'Kurtka Softshell Move', 380.00),
+(14, 'Rękawice Defender', 250.00),
+(6, 'Kurtka Down Jacket', 690.00),
+(14, 'Rękawice Defender Heat', 290.00),
+(4, 'Kurtka Trollveggen Gore-Tex Pro', 2200.00),
+(6, 'Kurtka Falketind Down750', 950.00),
+(8, 'Spodnie Falketind Flex1', 510.00),
+(4, 'Kurtka Lofoten Gore-Tex Pro', 2500.00),
+(11, 'Plecak Wizard 30+4', 320.00),
+(15, 'Śpiwór Sioux 800 Syn', 270.00),
+(4, 'Kurtka Elope 3in1', 710.00),
+(15, 'Śpiwór Hokonui 700 Syn', 310.00),
+(10, 'Bielizna Merino 200 Oasis LS', 280.00),
+(7, 'Bluza Quantum III LS Zip', 450.00),
+(18, 'Skarpetki Hike+ Light Crew', 75.00),
+(10, 'Bielizna Merino 260 Tech LS', 310.00),
+(10, 'Bielizna Merino 250 Crew', 290.00),
+(18, 'Skarpetki PhD Outdoor Light', 69.00),
+(10, 'Bielizna Merino Sport 150', 150.00),
+(18, 'Skarpetki PhD Outdoor Heavy', 75.00),
+(18, 'Skarpetki Trekker Heavyweight', 60.00),
+(18, 'Skarpetki Hike Midweight', 65.00),
+(18, 'Skarpetki Trail Run Speed Demon', 55.00),
+(18, 'Skarpetki WoolFusion Trekker', 79.00),
+(18, 'Chusta Original EcoStretch', 49.00),
+(13, 'Czapka Merino Wool Beanie', 80.00),
+(13, 'Czapka Polar Thermal', 55.00),
+(18, 'Chusta UV Headband', 40.00),
+(16, 'Raki G10 New-Matic', 420.00),
+(16, 'Czekan G Zero', 350.00),
+(16, 'Kask Stealth', 290.00),
+(16, 'Raki G12 New-Classic', 490.00),
+(16, 'Uprząż Sitta', 310.00),
+(16, 'Karabinek Spirit Express', 59.00),
+(16, 'Kask Meteor', 280.00),
+(16, 'Uprząż SAMA', 250.00),
+(16, 'Lina Cobra II 8.6mm 60m', 720.00),
+(16, 'Lina Karma 9.8mm 60m', 510.00),
+(16, 'Przyrząd asekuracyjny Birdie', 150.00),
+(16, 'Lina Booster 9.7mm 60m', 600.00),
+(2, 'Buty Wspinaczkowe Ozone Plus', 420.00),
+(16, 'Crashpad Moonwalk', 590.00),
+(16, 'Ekspres Hawk Combi', 65.00),
+(2, 'Buty Wspinaczkowe Jett QC', 350.00),
+(16, 'Uprząż Versa II', 140.00),
+(16, 'Lina R44 10.5mm 60m', 650.00),
+(16, 'Karabinek Bora Screw', 35.00),
+(16, 'Kask Kapa', 160.00),
+(6, 'Kurtka Puchowa Eskimo', 890.00),
+(15, 'Śpiwór Radical 4Z', 1400.00),
+(6, 'Kamizelka Phantom', 590.00),
+(6, 'Kurtka X-Trem', 1300.00),
+(6, 'Kurtka Puchowa Expert 4', 990.00),
+(15, 'Śpiwór Ultralight III', 1200.00),
+(6, 'Kurtka Climber', 710.00),
+(15, 'Śpiwór Ultralight I', 850.00),
+(10, 'Bielizna Dry LS13000', 130.00),
+(10, 'Bielizna Wool Longsleeve', 210.00),
+(13, 'Czapka Thermic Beanie', 45.00),
+(10, 'Bielizna Fusion LS', 180.00);
+
+INSERT INTO magazyn (id_produktu, ilosc_na_stanie) VALUES
+(1, 150), (2, 45), (3, 0), (4, 200), (5, 35), (6, 500), (7, 120), (8, 0), (9, 15), (10, 80),
+(11, 255), (12, 60), (13, 10), (14, 0), (15, 330), (16, 95), (17, 40), (18, 5), (19, 100), (20, 20),
+(21, 0), (22, 415), (23, 75), (24, 180), (25, 25), (26, 0), (27, 150), (28, 65), (29, 300), (30, 90),
+(31, 10), (32, 0), (33, 50), (34, 440), (35, 125), (36, 5), (37, 210), (38, 30), (39, 0), (40, 160),
+(41, 70), (42, 25), (43, 350), (44, 10), (45, 0), (46, 85), (47, 195), (48, 40), (49, 15), (50, 0),
+(51, 105), (52, 220), (53, 55), (54, 30), (55, 0), (56, 400), (57, 130), (58, 20), (59, 75), (60, 5),
+(61, 0), (62, 240), (63, 60), (64, 15), (65, 90), (66, 0), (67, 310), (68, 45), (69, 100), (70, 25),
+(71, 0), (72, 175), (73, 50), (74, 10), (75, 280), (76, 5), (77, 0), (78, 140), (79, 35), (80, 20),
+(81, 0), (82, 95), (83, 210), (84, 60), (85, 15), (86, 0), (87, 450), (88, 120), (89, 30), (90, 5),
+(91, 160), (92, 0), (93, 25), (94, 80), (95, 330), (96, 40), (97, 0), (98, 190), (99, 55), (100, 10),
+(101, 0), (102, 75), (103, 260), (104, 45), (105, 20), (106, 0), (107, 135), (108, 90), (109, 15), (110, 5),
+(111, 0), (112, 300), (113, 70), (114, 25), (115, 150), (116, 0), (117, 40), (118, 220), (119, 10), (120, 85),
+(121, 0), (122, 50), (123, 175), (124, 30), (125, 5), (126, 0), (127, 400), (128, 110), (129, 65), (130, 20),
+(131, 0), (132, 140), (133, 35), (134, 250), (135, 80), (136, 0), (137, 15), (138, 95), (139, 310), (140, 45),
+(141, 0), (142, 60), (143, 25), (144, 180), (145, 10), (146, 0), (147, 500), (148, 120), (149, 40), (150, 5),
+(151, 0), (152, 200), (153, 75), (154, 30), (155, 150), (156, 0), (157, 90), (158, 20), (159, 330), (160, 55),
+(161, 0), (162, 105), (163, 15), (164, 240), (165, 45), (166, 0), (167, 85), (168, 300), (169, 10), (170, 60),
+(171, 0), (172, 25), (173, 130), (174, 50), (175, 400), (176, 0), (177, 5), (178, 160), (179, 35), (180, 210),
+(181, 0), (182, 70), (183, 20), (184, 95), (185, 275), (186, 0), (187, 15), (188, 40), (189, 110), (190, 80),
+(191, 0), (192, 45), (193, 185), (194, 10), (195, 5), (196, 0), (197, 350), (198, 65), (199, 25), (200, 140),
+(201, 0), (202, 30), (203, 120), (204, 55), (205, 15), (206, 0), (207, 450), (208, 90), (209, 20), (210, 100),
+(211, 0), (212, 75), (213, 230), (214, 40), (215, 5), (216, 0), (217, 170), (218, 60), (219, 10), (220, 290),
+(221, 0), (222, 35), (223, 150), (224, 85), (225, 25), (226, 0), (227, 45), (228, 200), (229, 30), (230, 5),
+(231, 0), (232, 115), (233, 50), (234, 400), (235, 125), (236, 0), (237, 10), (238, 70), (239, 20), (240, 330),
+(241, 0), (242, 65), (243, 15), (244, 90), (245, 260), (246, 0), (247, 40), (248, 80), (249, 5), (250, 145),
+(251, 0), (252, 25), (253, 180), (254, 35), (255, 100), (256, 0), (257, 45), (258, 210), (259, 10), (260, 50),
+(261, 0), (262, 30), (263, 150), (264, 75);
+
+INSERT INTO dostawy (id_producenta, data_dostawy, nr_faktury) VALUES
+(12, '2025-01-05', 'FV/2025/01/001'),
+(45, '2025-01-12', 'FV/2025/01/002'),
+(2, '2025-01-18', 'FV/2025/01/003'),
+(30, '2025-01-25', 'FV/2025/01/004'),
+(49, '2025-01-29', 'FV/2025/01/005'),
+(4, '2025-02-03', 'FV/2025/02/006'),
+(15, '2025-02-10', 'FV/2025/02/007'),
+(28, '2025-02-15', 'FV/2025/02/008'),
+(8, '2025-02-20', 'FV/2025/02/009'),
+(35, '2025-02-28', 'FV/2025/02/010'),
+(50, '2025-03-05', 'FV/2025/03/011'),
+(12, '2025-03-10', 'FV/2025/03/012'),
+(22, '2025-03-15', 'FV/2025/03/013'),
+(44, '2025-03-22', 'FV/2025/03/014'),
+(7, '2025-03-29', 'FV/2025/03/015'),
+(19, '2025-04-02', 'FV/2025/04/016'),
+(49, '2025-04-08', 'FV/2025/04/017'),
+(3, '2025-04-15', 'FV/2025/04/018'),
+(28, '2025-04-20', 'FV/2025/04/019'),
+(11, '2025-04-26', 'FV/2025/04/020'),
+(4, '2025-05-05', 'FV/2025/05/021'),
+(33, '2025-05-10', 'FV/2025/05/022'),
+(1, '2025-05-18', 'FV/2025/05/023'),
+(41, '2025-05-22', 'FV/2025/05/024'),
+(35, '2025-05-30', 'FV/2025/05/025'),
+(18, '2025-06-04', 'FV/2025/06/026'),
+(9, '2025-06-12', 'FV/2025/06/027'),
+(25, '2025-06-19', 'FV/2025/06/028'),
+(30, '2025-06-25', 'FV/2025/06/029'),
+(49, '2025-06-29', 'FV/2025/06/030'),
+(12, '2025-07-05', 'FV/2025/07/031'),
+(6, '2025-07-15', 'FV/2025/07/032'),
+(40, '2025-07-22', 'FV/2025/07/033'),
+(28, '2025-07-28', 'FV/2025/07/034'),
+(4, '2025-08-08', 'FV/2025/08/035'),
+(15, '2025-08-14', 'FV/2025/08/036'),
+(39, '2025-08-20', 'FV/2025/08/037'),
+(44, '2025-08-25', 'FV/2025/08/038'),
+(2, '2025-08-30', 'FV/2025/08/039'),
+(35, '2025-09-05', 'FV/2025/09/040'),
+(26, '2025-09-12', 'FV/2025/09/041'),
+(17, '2025-09-18', 'FV/2025/09/042'),
+(47, '2025-09-24', 'FV/2025/09/043'),
+(49, '2025-09-29', 'FV/2025/09/044'),
+(5, '2025-10-05', 'FV/2025/10/045'),
+(37, '2025-10-12', 'FV/2025/10/046'),
+(23, '2025-10-18', 'FV/2025/10/047'),
+(10, '2025-10-25', 'FV/2025/10/048'),
+(28, '2025-10-31', 'FV/2025/10/049'),
+(4, '2025-11-08', 'FV/2025/11/050'),
+(14, '2025-11-15', 'FV/2025/11/051'),
+(32, '2025-11-20', 'FV/2025/11/052'),
+(43, '2025-11-25', 'FV/2025/11/053'),
+(50, '2025-11-29', 'FV/2025/11/054'),
+(9, '2025-12-05', 'FV/2025/12/055'),
+(35, '2025-12-10', 'FV/2025/12/056'),
+(21, '2025-12-15', 'FV/2025/12/057'),
+(12, '2025-12-20', 'FV/2025/12/058'),
+(36, '2025-12-28', 'FV/2025/12/059');
+
+INSERT INTO zamowienia (id_klienta, data_zamowienia, nr_faktury) VALUES
+(12, '2025-01-03', 'FS/2025/01/001'),
+(5,  '2025-01-09', 'FS/2025/01/002'),
+(33, '2025-01-15', 'FS/2025/01/003'),
+(48, '2025-01-22', 'FS/2025/01/004'),
+(1,  '2025-01-28', 'FS/2025/01/005'),
+(22, '2025-02-04', 'FS/2025/02/006'),
+(15, '2025-02-11', 'FS/2025/02/007'),
+(12, '2025-02-14', 'FS/2025/02/008'), 
+(44, '2025-02-20', 'FS/2025/02/009'),
+(7,  '2025-02-27', 'FS/2025/02/010'),
+(39, '2025-03-05', 'FS/2025/03/011'),
+(2,  '2025-03-12', 'FS/2025/03/012'),
+(5,  '2025-03-18', 'FS/2025/03/013'), 
+(19, '2025-03-24', 'FS/2025/03/014'),
+(28, '2025-03-30', 'FS/2025/03/015'),
+(48, '2025-04-03', 'FS/2025/04/016'), 
+(3,  '2025-04-10', 'FS/2025/04/017'),
+(10, '2025-04-17', 'FS/2025/04/018'),
+(44, '2025-04-25', 'FS/2025/04/019'), 
+(31, '2025-04-29', 'FS/2025/04/020'),
+(16, '2025-05-06', 'FS/2025/05/021'),
+(22, '2025-05-13', 'FS/2025/05/022'),
+(40, '2025-05-20', 'FS/2025/05/023'),
+(6,  '2025-05-27', 'FS/2025/05/024'),
+(12, '2025-06-03', 'FS/2025/06/025'), 
+(1,  '2025-06-10', 'FS/2025/06/026'), 
+(35, '2025-06-17', 'FS/2025/06/027'),
+(27, '2025-06-24', 'FS/2025/06/028'),
+(48, '2025-07-02', 'FS/2025/07/029'), 
+(9,  '2025-07-09', 'FS/2025/07/030'),
+(14, '2025-07-16', 'FS/2025/07/031'),
+(44, '2025-07-23', 'FS/2025/07/032'), 
+(23, '2025-07-30', 'FS/2025/07/033'),
+(18, '2025-08-05', 'FS/2025/08/034'),
+(5,  '2025-08-12', 'FS/2025/08/035'), 
+(37, '2025-08-19', 'FS/2025/08/036'),
+(41, '2025-08-26', 'FS/2025/08/037'),
+(30, '2025-09-02', 'FS/2025/09/038'),
+(8,  '2025-09-09', 'FS/2025/09/039'),
+(13, '2025-09-16', 'FS/2025/09/040'),
+(25, '2025-09-23', 'FS/2025/09/041'),
+(20, '2025-09-30', 'FS/2025/09/042'),
+(4,  '2025-10-07', 'FS/2025/10/043'),
+(11, '2025-10-14', 'FS/2025/10/044'),
+(33, '2025-10-21', 'FS/2025/10/045'), 
+(1,  '2025-10-28', 'FS/2025/10/046'), 
+(47, '2025-11-04', 'FS/2025/11/047'),
+(26, '2025-11-12', 'FS/2025/11/048'),
+(34, '2025-11-18', 'FS/2025/11/049'),
+(42, '2025-11-25', 'FS/2025/11/050'),
+(12, '2025-12-02', 'FS/2025/12/051'), 
+(15, '2025-12-09', 'FS/2025/12/052'), 
+(29, '2025-12-15', 'FS/2025/12/053'),
+(38, '2025-12-20', 'FS/2025/12/054'),
+(17, '2025-12-28', 'FS/2025/12/055');
+
+
+INSERT INTO dane_dostawy (id_dostawy, id_produktu, ilosc, cena_dostawy) VALUES
+    (1, 90, 12, 0), (1, 87, 45, 0), (1, 88, 23, 0),
+    (2, 241, 10, 0), (2, 242, 35, 0), (2, 243, 8, 0), (2, 244, 42, 0),
+    (3, 19, 15, 0), (3, 16, 27, 0), (3, 11, 5, 0), (3, 13, 33, 0),
+    (4, 180, 20, 0), (4, 181, 14, 0), (4, 183, 40, 0), (4, 184, 9, 0),
+    (5, 258, 50, 0), (5, 257, 18, 0),
+    (6, 33, 7, 0), (6, 31, 29, 0), (6, 34, 12, 0), (6, 29, 38, 0),
+    (7, 106, 25, 0),
+    (8, 174, 11, 0), (8, 172, 44, 0),
+    (9, 60, 30, 0), (9, 62, 16, 0), (9, 65, 5, 0),
+    (10, 204, 48, 0),
+    (11, 261, 22, 0), (11, 262, 13, 0),
+    (12, 91, 37, 0),
+    (13, 143, 9, 0),
+    (14, 239, 41, 0), (14, 237, 19, 0), (14, 240, 6, 0), (14, 238, 32, 0),
+    (15, 52, 14, 0), (15, 58, 28, 0), (15, 54, 45, 0), (15, 53, 10, 0), (15, 56, 21, 0),
+    (16, 129, 36, 0), (16, 125, 8, 0), (16, 128, 49, 0),
+    (17, 260, 17, 0), (17, 257, 31, 0),
+    (18, 23, 24, 0), (18, 28, 5, 0), (18, 21, 40, 0),
+    (19, 173, 12, 0), (19, 171, 33, 0), (19, 170, 26, 0),
+    (20, 81, 15, 0),
+    (21, 29, 44, 0), (21, 34, 7, 0), (21, 36, 19, 0), (21, 30, 35, 0), (21, 32, 11, 0),
+    (22, 194, 28, 0), (22, 196, 42, 0),
+    (23, 5, 9, 0), (23, 1, 50, 0), (23, 8, 23, 0), (23, 7, 16, 0),
+    (24, 225, 39, 0), (24, 226, 6, 0), (24, 227, 30, 0), (24, 228, 14, 0),
+    (25, 202, 21, 0), (25, 201, 47, 0), (25, 204, 13, 0),
+    (26, 122, 34, 0),
+    (27, 71, 8, 0), (27, 68, 25, 0),
+    (28, 158, 41, 0), (28, 159, 18, 0), (28, 157, 29, 0),
+    (29, 183, 10, 0), (29, 181, 37, 0), (29, 184, 5, 0), (29, 182, 46, 0), (29, 180, 22, 0),
+    (30, 259, 15, 0), (30, 260, 31, 0), (30, 258, 12, 0),
+    (31, 88, 43, 0),
+    (32, 51, 20, 0), (32, 47, 36, 0), (32, 48, 9, 0),
+    (33, 222, 27, 0), (33, 221, 14, 0),
+    (34, 171, 38, 0),
+    (35, 33, 11, 0), (35, 36, 49, 0), (35, 35, 24, 0), (35, 31, 6, 0),
+    (36, 107, 33, 0), (36, 109, 19, 0),
+    (37, 220, 45, 0), (37, 217, 7, 0), (37, 218, 28, 0),
+    (38, 237, 16, 0),
+    (39, 13, 42, 0), (39, 17, 21, 0), (39, 14, 35, 0),
+    (40, 203, 13, 0),
+    (41, 163, 50, 0),
+    (42, 115, 8, 0), (42, 117, 30, 0),
+    (43, 249, 17, 0), (43, 252, 40, 0), (43, 251, 25, 0), (43, 250, 12, 0),
+    (44, 259, 39, 0), (44, 257, 5, 0), (44, 260, 22, 0), (44, 258, 46, 0),
+    (45, 37, 18, 0), (45, 41, 34, 0), (45, 40, 10, 0), (45, 38, 29, 0),
+    (46, 209, 44, 0), (46, 211, 26, 0), (46, 210, 9, 0), (46, 212, 37, 0),
+    (47, 147, 15, 0),
+    (48, 76, 32, 0), (48, 74, 48, 0), (48, 79, 23, 0), (48, 77, 6, 0), (48, 78, 19, 0),
+    (49, 170, 41, 0), (49, 171, 14, 0), (49, 173, 27, 0), (49, 174, 35, 0),
+    (50, 32, 8, 0), (50, 35, 43, 0), (50, 33, 20, 0), (50, 36, 12, 0),
+    (51, 103, 30, 0), (51, 100, 17, 0), (51, 101, 45, 0),
+    (52, 189, 25, 0), (52, 191, 7, 0), (52, 192, 38, 0), (52, 190, 16, 0),
+    (53, 233, 49, 0), (53, 235, 22, 0), (53, 236, 11, 0), (53, 234, 33, 0),
+    (54, 263, 5, 0), (54, 264, 29, 0),
+    (55, 68, 13, 0), (55, 67, 40, 0), (55, 71, 24, 0),
+    (56, 202, 36, 0), (56, 203, 18, 0), (56, 204, 9, 0),
+    (57, 138, 47, 0), (57, 137, 21, 0), (57, 135, 15, 0), (57, 139, 32, 0), (57, 136, 10, 0),
+    (58, 90, 26, 0), (58, 87, 42, 0), (58, 88, 19, 0),
+    (59, 206, 31, 0);
+
+INSERT INTO dane_zamowienia (id_zamowienia, id_produktu, ilosc, cena_zakupu) VALUES
+(1, 6, 12, 0), (1, 22, 8, 0), (1, 34, 15, 0),
+(2, 47, 10, 0), (2, 87, 6, 0),
+(3, 127, 8, 0), (3, 147, 12, 0), (3, 6, 10, 0),
+(4, 11, 5, 0), (4, 15, 9, 0), (4, 29, 7, 0), (4, 43, 6, 0),
+(5, 56, 14, 0), (5, 4, 8, 0),
+(6, 22, 9, 0), (6, 34, 7, 0), (6, 87, 5, 0),
+(7, 1, 11, 0), (7, 112, 8, 0), (7, 159, 6, 0),
+(8, 175, 9, 0), (8, 207, 10, 0),
+(9, 234, 5, 0), (9, 6, 13, 0), (9, 127, 8, 0),
+(10, 22, 6, 0), (10, 29, 12, 0),
+(11, 34, 8, 0), (11, 43, 9, 0), (11, 56, 5, 0), (11, 87, 7, 0),
+(12, 95, 8, 0), (12, 118, 5, 0), (12, 139, 10, 0),
+(13, 147, 15, 0), (13, 1, 6, 0),
+(14, 4, 7, 0), (14, 11, 8, 0), (14, 15, 11, 0),
+(15, 22, 5, 0), (15, 127, 10, 0), (15, 175, 6, 0),
+(16, 207, 9, 0), (16, 240, 12, 0),
+(17, 6, 6, 0), (17, 34, 14, 0), (17, 47, 8, 0),
+(18, 56, 10, 0), (18, 87, 5, 0), (18, 112, 7, 0),
+(19, 134, 8, 0), (19, 147, 6, 0),
+(20, 15, 9, 0), (20, 22, 11, 0), (20, 29, 5, 0), (20, 43, 8, 0),
+(21, 67, 5, 0), (21, 127, 13, 0),
+(22, 159, 9, 0), (22, 1, 10, 0), (22, 6, 6, 0),
+(23, 11, 12, 0), (23, 34, 8, 0),
+(24, 47, 6, 0), (24, 87, 11, 0), (24, 147, 8, 0), (24, 234, 5, 0),
+(25, 22, 7, 0), (25, 56, 12, 0),
+(26, 4, 6, 0), (26, 175, 9, 0), (26, 207, 13, 0),
+(27, 29, 10, 0), (27, 43, 5, 0),
+(28, 127, 8, 0), (28, 6, 9, 0), (28, 11, 6, 0), (28, 15, 11, 0),
+(29, 22, 12, 0), (29, 34, 5, 0), (29, 87, 8, 0),
+(30, 112, 10, 0), (30, 147, 6, 0),
+(31, 1, 9, 0), (31, 56, 8, 0), (31, 47, 11, 0),
+(32, 29, 6, 0), (32, 175, 10, 0),
+(33, 6, 14, 0), (33, 11, 8, 0), (33, 22, 5, 0), (33, 127, 7, 0),
+(34, 43, 9, 0), (34, 207, 11, 0), (34, 234, 8, 0),
+(35, 15, 6, 0), (35, 34, 13, 0),
+(36, 87, 8, 0), (36, 147, 10, 0), (36, 4, 5, 0),
+(37, 56, 9, 0), (37, 22, 14, 0),
+(38, 6, 7, 0), (38, 29, 9, 0), (38, 112, 11, 0), (38, 127, 5, 0),
+(39, 175, 12, 0), (39, 1, 8, 0),
+(40, 34, 6, 0), (40, 11, 10, 0), (40, 47, 7, 0),
+(41, 87, 13, 0), (41, 15, 5, 0),
+(42, 22, 8, 0), (42, 43, 11, 0), (42, 56, 6, 0),
+(43, 147, 10, 0), (43, 207, 9, 0), (43, 234, 6, 0),
+(44, 6, 8, 0), (44, 29, 7, 0),
+(45, 127, 12, 0), (45, 34, 9, 0), (45, 4, 6, 0),
+(46, 1, 11, 0), (46, 22, 7, 0), (46, 112, 5, 0),
+(47, 15, 8, 0), (47, 56, 10, 0), (47, 87, 6, 0),
+(48, 175, 5, 0), (48, 147, 13, 0),
+(49, 11, 9, 0), (49, 6, 10, 0), (49, 43, 8, 0), (49, 47, 5, 0),
+(50, 22, 14, 0), (50, 127, 9, 0),
+(51, 34, 7, 0), (51, 29, 11, 0), (51, 207, 6, 0),
+(52, 234, 8, 0), (52, 15, 12, 0),
+(53, 56, 6, 0), (53, 87, 9, 0), (53, 1, 10, 0),
+(54, 4, 8, 0), (54, 22, 5, 0), (54, 147, 14, 0),
+(55, 6, 9, 0), (55, 112, 6, 0), (55, 127, 11, 0);
+
+CREATE VIEW aktualny_stan_magazynu AS
 SELECT
     p.nazwa,
     k.nazwa AS kategoria,
     p.cena_zakupu AS cena,
-    
-    COALESCE(m.ilosc, 0) AS ilosc
+    COALESCE(m.ilosc_na_stanie, 0) AS ilosc_na_stanie
 FROM
     produkty p
 JOIN
     kategorie k ON p.id_kategorii = k.id_kategorii
 LEFT JOIN
     magazyn m ON p.id_produktu = m.id_produktu;
-
-
-
-CREATE VIEW BrakujaceProdukty AS
+    
+CREATE VIEW brakujace_produkty AS
 SELECT
     p.id_produktu,
     p.nazwa AS nazwa_produktu,
-    COALESCE(m.ilosc, 0) AS ilosc,
-    
-    pr.nazwa_firmy AS producent,
-    pr.email AS email_producenta,
-    pr.telefon AS kontakt
-    
+    COALESCE(m.ilosc_na_stanie, 0) AS ilosc_na_stanie
 FROM
     produkty p
 JOIN
-    producenci pr ON p.id_producenta = pr.id_producenta
-LEFT JOIN
     magazyn m ON p.id_produktu = m.id_produktu
 WHERE
-    COALESCE(m.ilosc, 0) < 20;
+    COALESCE(m.ilosc_na_stanie, 0) < 20;
+
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO administrator;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO administrator;
+
+GRANT SELECT, INSERT, UPDATE ON TABLE klienci, zamowienia TO sprzedawca;
+GRANT INSERT, DELETE, UPDATE, SELECT ON TABLE dane_zamowienia TO sprzedawca;
+GRANT SELECT ON TABLE produkty, kategorie TO sprzedawca;
+GRANT USAGE, SELECT ON SEQUENCE klienci_id_klienta_seq, zamowienia_id_zamowienia_seq TO sprzedawca;
+
+GRANT SELECT, INSERT, UPDATE ON TABLE dostawy, dane_dostawy TO magazynier;
+GRANT SELECT ON TABLE magazyn, produkty, kategorie TO magazynier;
+GRANT USAGE, SELECT ON SEQUENCE dostawy_id_dostawy_seq TO magazynier;
+
+GRANT SELECT ON TABLE produkty, kategorie TO users;
 
 COMMIT;
