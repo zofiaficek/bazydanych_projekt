@@ -133,7 +133,7 @@ Takie podejście realizuje dwa kluczowe cele:
 
 System definiuje trzy główne role użytkowników:
 
-| Rola | Uprawnienia (Podsumowanie) | Uzasadnienie |
+| Rola | Uprawnienia | Uzasadnienie |
 | :--- | :--- | :--- |
 | **Administrator** | Pełny dostęp (DDL/DML) | Zarządzanie strukturą i pełna kontrola nad bazą danych. |
 | **Sprzedawca** | `SELECT`, `INSERT`, `UPDATE` (Klienci, Zamówienia) <br> `SELECT`, `INSERT`, `DELETE`, `UPDATE` (Dane Zamówienia) | Tworzenie nowych klientów i obsługa pełnego cyklu zamówień. |
